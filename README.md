@@ -22,10 +22,70 @@ The project aims to support both screen mirroring and true extended-display func
 
 The initial development focus is establishing the streaming pipeline and validating Windows virtual-display integration. Features listed above are planned and should not be interpreted as already implemented.
 
+**Nothing connects, mirrors or extends yet.** What exists today:
+
+| Area | State |
+| --- | --- |
+| Windows host app shell (WinUI 3): navigation, Connect screen, diagnostics | Implemented |
+| Android companion app shell (Jetpack Compose): Connect and About screens | Implemented |
+| Session state model on both platforms, with unit tests | Implemented |
+| Protocol | Draft specification only |
+| USB transport, Wi-Fi transport, pairing | Not implemented |
+| Display capture, video encoding, decoding | Not implemented; first experiment planned |
+| Virtual display driver (Extend mode) | Not implemented; feasibility researched |
+
+Both apps say so in their own UI: the Connect button on Windows is disabled, with the reason shown.
+
 ### Platforms
 
 - Windows 11 — host application
-- Android — companion display application
+- Android 10 or later — companion display application
+
+### Repository layout
+
+```
+apps/
+  windows/     C# / .NET 10 / WinUI 3 host, core library and tests
+  android/     Kotlin / Jetpack Compose companion
+protocol/
+  specification/protocol.md
+docs/
+  architecture/   overview, IddCx feasibility, streaming experiment 01
+  development/    setup, build and verification record
+  security/       security model
+```
+
+### Building
+
+Windows host (needs the .NET 10 SDK):
+
+```powershell
+cd apps/windows
+dotnet build ExtendSpace.slnx
+dotnet test --solution ExtendSpace.slnx
+dotnet run --project src/ExtendSpace.Host
+```
+
+Android companion (needs a JDK and the Android SDK):
+
+```powershell
+cd apps/android
+.\gradlew.bat assembleDebug testDebugUnitTest
+```
+
+Prerequisites, versions and what has actually been verified are in [docs/development/setup.md](docs/development/setup.md).
+
+### Documentation
+
+- [Architecture overview](docs/architecture/overview.md)
+- [Protocol draft](protocol/specification/protocol.md)
+- [IddCx feasibility for Extend mode](docs/architecture/iddcx-feasibility.md)
+- [Experiment 01: USB mirroring end to end](docs/architecture/streaming-experiment-01.md)
+- [Security model](docs/security/security-model.md)
+
+### License
+
+MIT; see [LICENSE](LICENSE). A future virtual display driver derived from Microsoft's sample would carry that sample's MS-PL licence for the derived files, kept in its own directory; see the [feasibility notes](docs/architecture/iddcx-feasibility.md#8-licensing).
 
 ### Developer
 

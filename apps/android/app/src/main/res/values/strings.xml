@@ -1,0 +1,52 @@
+<resources>
+    <string name="app_name">ExtendSpace</string>
+
+    <string name="nav_connect">Connect</string>
+    <string name="nav_about">About</string>
+
+    <string name="connect_title">ExtendSpace</string>
+    <string name="connect_subtitle">Use this device as a display for Windows</string>
+
+    <string name="state_disconnected">Disconnected</string>
+    <string name="state_disconnected_detail">Not connected to a Windows host.</string>
+    <string name="state_connecting">Connecting</string>
+    <string name="state_negotiating">Negotiating</string>
+    <string name="state_streaming">Connected</string>
+    <string name="state_reconnecting">Reconnecting</string>
+    <string name="state_disconnecting">Disconnecting</string>
+    <string name="state_failed">Connection failed</string>
+    <string name="state_via_usb">Over USB.</string>
+    <string name="state_via_wireless">Over the local network.</string>
+
+    <string name="error_transport_unavailable">The connection to the host could not be opened.</string>
+    <string name="error_authentication_failed">The host could not be authenticated.</string>
+    <string name="error_incompatible_protocol">The host uses an incompatible protocol version.</string>
+    <string name="error_negotiation_failed">The host and this device could not agree on stream settings.</string>
+    <string name="error_connection_lost">The connection to the host was lost.</string>
+    <string name="error_internal">An unexpected error occurred.</string>
+
+    <string name="hosts_title">Windows hosts</string>
+    <string name="hosts_empty_title">No hosts yet</string>
+    <string name="hosts_empty_detail">Paired and discovered Windows hosts will appear here. Pairing and discovery are not implemented in this build.</string>
+    <string name="host_transport_usb">USB</string>
+    <string name="host_transport_wireless">Wireless</string>
+
+    <string name="methods_title">Connection methods</string>
+    <string name="method_usb_title">USB</string>
+    <string name="method_usb_detail">Started from ExtendSpace on Windows over a USB cable.</string>
+    <string name="method_wireless_title">Wireless</string>
+    <string name="method_wireless_detail">Authenticated connection on your local network.</string>
+    <string name="badge_not_implemented">Not implemented</string>
+    <string name="badge_implemented">Implemented</string>
+
+    <string name="about_title">About</string>
+    <string name="about_version">Version %1$s</string>
+    <string name="about_developer">Developed by RSX Develops</string>
+    <string name="about_status_title">Build status</string>
+    <string name="about_status_intro">This is an early development build. Nothing below marked as not implemented will work yet.</string>
+    <string name="feature_app_shell">App shell and navigation</string>
+    <string name="feature_state_model">Connection state model</string>
+    <string name="feature_usb">USB transport</string>
+    <string name="feature_wireless">Wireless pairing and transport</string>
+    <string name="feature_video">Video decoding and display</string>
+</resources>

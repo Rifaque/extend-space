@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ExtendSpace.Core/ExtendSpace.Core.csproj" />
+    <Project Path="src/ExtendSpace.Host/ExtendSpace.Host.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ExtendSpace.Core.Tests/ExtendSpace.Core.Tests.csproj" />
+  </Folder>
+</Solution>

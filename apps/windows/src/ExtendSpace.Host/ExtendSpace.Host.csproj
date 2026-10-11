@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <!-- Windows 11 is the supported floor. -->
+    <TargetPlatformMinVersion>10.0.22000.0</TargetPlatformMinVersion>
+    <RootNamespace>ExtendSpace.Host</RootNamespace>
+    <AssemblyName>ExtendSpace</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Platforms>x64;ARM64</Platforms>
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+    <!-- The Windows App SDK needs a concrete architecture; without -p:Platform, use this machine's. -->
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' and ('$(Platform)' == '' or '$(Platform)' == 'AnyCPU')">$(NETCoreSdkRuntimeIdentifier)</RuntimeIdentifier>
+    <UseWinUI>true</UseWinUI>
+    <!-- Unpackaged, with the Windows App SDK runtime carried alongside the app. Packaging is decided
+         together with driver distribution; see docs/architecture/overview.md. -->
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The metapackage also carries AI, search and widget components this app does not use.
+         Narrowing it to the WinUI component packages is a known size follow-up. -->
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.5.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ExtendSpace.Core\ExtendSpace.Core.csproj" />
+  </ItemGroup>
+
+</Project>

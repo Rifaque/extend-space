@@ -1,0 +1,48 @@
+# ---- OS / editors ----
+Thumbs.db
+Desktop.ini
+.DS_Store
+*.swp
+.vscode/
+.idea/
+*.iml
+
+# ---- .NET / WinUI 3 (apps/windows) ----
+bin/
+obj/
+.vs/
+*.user
+*.suo
+*.binlog
+TestResults/
+AppPackages/
+BundleArtifacts/
+# Signing material must never be committed.
+*.pfx
+*.snk
+
+# ---- Android / Gradle (apps/android) ----
+.gradle/
+.kotlin/
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+# Machine-specific SDK location.
+local.properties
+*.apk
+*.aab
+*.jks
+*.keystore
+# The Gradle wrapper JAR is the one binary that is intentionally tracked.
+!gradle/wrapper/gradle-wrapper.jar
+
+# ---- Native driver (native/display-driver, not created yet) ----
+x64/
+ARM64/
+*.cat
+*.cer
+*.pdb
+*.obj
+*.tlog
+*.log
