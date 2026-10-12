@@ -17,7 +17,8 @@ Needed later, not now:
 | Tool | Needed for | Notes |
 | --- | --- | --- |
 | Visual Studio 2026 with *Desktop development with C++*, Spectre-mitigated libraries and the *Windows Driver Kit* component, plus the matching Windows SDK and WDK — or the EWDK ISO | Building the virtual-display driver | See [IddCx feasibility](../architecture/iddcx-feasibility.md#1-toolchain). Do not install a driver on a machine you depend on. |
-| A physical Android device with USB debugging enabled | The first streaming experiment | See [experiment 01](../architecture/streaming-experiment-01.md). |
+| A physical Android device with USB debugging enabled | Steps 2 and 3 of the first streaming experiment | See [experiment 01](../architecture/streaming-experiment-01.md). |
+| `ffmpeg` and `ffprobe` on `PATH` | Checking that a captured `.h264` file really decodes | Optional. The capture experiment runs without them. |
 
 ## Windows host
 
@@ -26,10 +27,16 @@ cd apps/windows
 dotnet build ExtendSpace.slnx
 dotnet test --solution ExtendSpace.slnx
 dotnet run --project src/ExtendSpace.Host
+
+# Capture-and-encode experiment: writes a .h264 file of the primary monitor
+dotnet run --project experiments/ExtendSpace.Experiments.CaptureEncode -- --help
 ```
 
 - `global.json` pins the .NET 10 SDK and selects the Microsoft.Testing.Platform test runner, which
-  xUnit v3 uses. That is why the test command is `dotnet test --solution`, not `dotnet test <path>`.
+  xUnit v3 uses. That is why the test command is `dotnet test --solution`, not `dotnet test <path>`,
+  and why it has to be run from `apps/windows`: from the repository root `global.json` is not found
+  and `dotnet test apps/windows/ExtendSpace.slnx` fails with a "VSTest target is no longer supported"
+  error before running anything.
 - Without `-p:Platform`, the app builds for the machine's own architecture. Use `-p:Platform=x64` or
   `-p:Platform=ARM64` to choose.
 - Warnings are errors (`Directory.Build.props`).
@@ -43,6 +50,8 @@ Projects:
 | `src/ExtendSpace.Core` | `net10.0` | Session state machine, capabilities, view models. No UI or Windows dependency. |
 | `src/ExtendSpace.Host` | `net10.0-windows10.0.26100.0`, minimum Windows 11 (22000) | WinUI 3 application. Builds `ExtendSpace.exe`. |
 | `tests/ExtendSpace.Core.Tests` | `net10.0` | xUnit v3 tests for `ExtendSpace.Core`. |
+| `experiments/ExtendSpace.Experiments.CaptureEncode` | `net10.0-windows10.0.26100.0`, minimum Windows 11 (22000) | Console experiment: display capture to an H.264 file. Builds `ExtendSpace.CaptureEncode.exe`. Not referenced by the app. See [experiment 01](../architecture/streaming-experiment-01.md#step-1--capture-and-encode-to-a-file). |
+| `tests/ExtendSpace.Experiments.CaptureEncode.Tests` | `net10.0-windows10.0.26100.0` | xUnit v3 tests for the experiment's deterministic logic. They do not capture or encode anything. |
 
 ## Android companion
 
@@ -60,16 +69,27 @@ cd apps/android
 - Application ID `com.rsxdevelops.extendspace`. Change it before any public release if RSX Develops
   owns a different reverse-domain name; it cannot be changed after publishing.
 - The app requests no permissions yet.
+- Debug builds contain one extra screen, "ExtendSpace decoder test", which plays a `.h264` file
+  captured by the Windows experiment through the device's H.264 decoder. Its code, manifest entry
+  and tests are in `app/src/debug` and `app/src/testDebug`, so release builds have none of it. How
+  to use it is in [experiment 01](../architecture/streaming-experiment-01.md#reproduce).
+- Xiaomi HyperOS refuses `adb install` (`INSTALL_FAILED_USER_RESTRICTED`) until *Developer options →
+  Install via USB* is switched on, on the device, by its owner.
 
 ## State of the development machine
 
-Inspected on 2026-10-11. Windows 11 Home, build 26300, x64.
+Inspected on 2026-10-11. Windows 11 Home, build 26300, x64. The .NET entries were rechecked on
+2026-10-12, after the .NET 10 SDK had been installed.
 
 **Installed and verified** (used successfully during this phase)
 
 | Tool | Detail |
 | --- | --- |
 | Git | 2.52.0 |
+| .NET SDK | 10.0.401 in `C:\Program Files\dotnet`, used for every Windows build and test since it was installed. 7.0.410 is also installed and unused. |
+| .NET runtimes | 10.0.12, plus 9.0.10, 9.0.11, 8.0.23 and 7.0.20 |
+| Android device | Xiaomi Pad 7 (`2410CRP4CI`), Android 16, over USB with ADB, from 2026-10-12. The debug build installs and runs on it. |
+| `ffmpeg`, `ffprobe` | Build 2026-01-26 (gyan.dev "essentials"), on `PATH`. Used to validate the capture experiment's output. |
 | JDK | Temurin 22.0.2 on `PATH` |
 | Android SDK | `ANDROID_HOME` set; platforms 36, 36.1, 37.0; build-tools 35, 36, 36.1 |
 | Gradle | No global install; 9.7.1 was already in the wrapper cache and is now pinned by the project wrapper |
@@ -86,30 +106,25 @@ Inspected on 2026-10-11. Windows 11 Home, build 26300, x64.
 | Windows SDK | 10.0.26100 (user-mode headers, `signtool`) |
 | JDK 25 | Oracle, in `Program Files\Java` |
 | Android NDK | 28.2 |
-| .NET runtimes | 7.0, 8.0, 9.0 (no 10.0) |
 
 **Missing**
 
 | Tool | Effect |
 | --- | --- |
-| **.NET 10 SDK** | The only installed SDK is 7.0.410, which has been out of support since May 2024 and cannot build `net10.0`. **The Windows host cannot be built on this machine as it stands.** |
-| .NET 10 runtime | Needed to run the built app; comes with the SDK. |
 | WDK, IddCx headers, `inf2cat`, `stampinf`, `devcon`, Spectre-mitigated libraries | No driver can be built. Not needed until the driver work starts. |
 | WinUI 3 project templates | Not needed; the projects were written by hand. |
-| A connected Android device | The app has not been launched on Android. |
 | Android SDK command-line tools | Not needed for building. |
 
 **Not required for this phase**: Android NDK, the C++ toolsets, the Windows SDK, an Android Studio
 bundled JDK (the one in the Android Studio folder appears incomplete).
 
-### How the Windows projects were verified without the SDK installed
+### How the Windows projects were first verified, before the SDK was installed
 
-To avoid changing the machine, the Windows projects were built and tested with a portable copy of
+This is history: the SDK is installed now and is what every later build used. On 2026-10-11, to
+avoid changing the machine, the Windows projects were built and tested with a portable copy of
 the .NET 10.0.401 SDK, downloaded as a zip from Microsoft's release feed, checked against the
 published SHA-512, extracted to a temporary folder and used through its own `dotnet.exe`. Nothing
 was installed, no `PATH` or registry entry was changed, and the folder was deleted afterwards.
-Installing the SDK properly (first row of the prerequisites table) is still required to work on the
-Windows host.
 
 ## Verification record
 
@@ -121,6 +136,28 @@ Windows host.
 | Scripted UI walk of the running host through UI Automation | Every navigation item and both option groups selected without the process exiting; Connect button reported disabled |
 | `gradlew clean assembleDebug testDebugUnitTest lintDebug` | Succeeded; `app-debug.apk` produced; 9 tests passed, 0 failed; lint 0 errors, 1 warning |
 | Install and launch on the emulator | **Not done.** `adb install` failed: the emulator image has 260 MB free. Wiping the user's emulator was not attempted. |
+
+Capture-and-encode experiment, 2026-10-11 to 2026-10-12, with the installed .NET 10.0.401 SDK, from
+`apps/windows`:
+
+| Command | Result |
+| --- | --- |
+| `dotnet build ExtendSpace.slnx`, before any change | Succeeded, 0 warnings, 0 errors |
+| `dotnet test --solution ExtendSpace.slnx`, before any change | 24 passed, 0 failed, 0 skipped |
+| `dotnet build ExtendSpace.slnx`, with the experiment | Succeeded, 0 warnings, 0 errors |
+| `dotnet test --solution ExtendSpace.slnx`, with the experiment | 140 passed, 0 failed, 0 skipped: the same 24 plus 116 for the experiment |
+| `ExtendSpace.CaptureEncode.exe capture …`, eight runs against the real display | All succeeded; every file decodes fully with ffmpeg. Figures and limits are in [experiment 01](../architecture/streaming-experiment-01.md#results). |
+
+Android decoder validation, 2026-10-12:
+
+| Command | Result |
+| --- | --- |
+| `dotnet build ExtendSpace.slnx`, `dotnet test --solution ExtendSpace.slnx` | 0 warnings, 0 errors; 172 passed, 0 failed |
+| `gradlew assembleDebug testDebugUnitTest lintDebug` | Succeeded; 41 tests passed, 0 failed; lint 0 errors, 1 warning |
+| `gradlew assembleRelease` | Succeeded; the decoder test screen is not in the release APK |
+| `adb install -r app-debug.apk` on the Xiaomi Pad 7 | Succeeded, after *Install via USB* was enabled on the tablet |
+| Decoder test screen on the tablet, five real captures | Every picture of every file decoded by the hardware decoder and shown. Figures and limits are in [experiment 01](../architecture/streaming-experiment-01.md#results-on-the-device). |
+| The app's own screens on the tablet | **Not exercised.** Only the decoder test screen was opened. |
 
 Remaining warning: Android lint reports that Gradle 9.8.1 is available; the wrapper stays on 9.7.1,
 the version already cached on this machine.

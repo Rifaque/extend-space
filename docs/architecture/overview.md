@@ -1,7 +1,12 @@
 # Architecture overview
 
 Status: the application shells and the session-state model exist. Everything in the streaming
-pipeline below is a design, not code. The "Status" column in each table says which is which.
+pipeline below is a design, not code in the applications. The exceptions sit outside the product
+paths: a standalone console experiment that captures a display and encodes it to an H.264 file
+([experiment 01, step 1](streaming-experiment-01.md#step-1--capture-and-encode-to-a-file)), and a
+screen in Android debug builds that decodes such a file
+([step 2a](streaming-experiment-01.md#step-2a--decode-a-captured-file-on-android)). The "Status"
+column in each table says which is which.
 
 ## Shape of the system
 
@@ -40,8 +45,8 @@ driver that makes a new monitor exist; it does not add a second pipeline.
 | **View models and session state** (`ExtendSpace.Core`) | `SessionStateMachine` holds the one session's lifecycle and rejects invalid transitions. `ConnectViewModel` turns it into bindable state. `SessionCapabilities` states what this build can really do, and the Connect button is enabled from it. | Reference any UI framework or Windows API, so all of it is unit-tested on plain .NET. | Implemented and tested. |
 | **Session coordinator** | Reacts to a connect request: opens the transport, runs the handshake, builds the pipeline in order, tears it down in reverse order, and drives reconnection. It is the only component that dispatches "what actually happened" events into the state machine. | Contain capture, codec or socket code. | Not implemented. |
 | **Display source** | One interface: start, stop, and deliver frames as Direct3D 11 textures with a capture timestamp, plus a size-changed notification. Two implementations: an existing monitor (Mirror) and the virtual monitor (Extend). | Know about encoding or networking. | Not implemented. |
-| **Capture** | Proposed: Windows.Graphics.Capture on a monitor, with a free-threaded frame pool so frames arrive off the UI thread. Desktop Duplication is the fallback if a requirement cannot be met. | — | Not implemented. Choice to be confirmed by experiment 01. |
-| **Video encoder** | Texture in, H.264 access units out, entirely on the GPU where a hardware encoder exists. Low-latency settings, no B-frames, keyframe on demand, bitrate changeable at run time. Proposed: Media Foundation hardware encoder transform. | Decide *when* to drop frames; that is the coordinator's backpressure policy. | Not implemented. |
+| **Capture** | Proposed: Windows.Graphics.Capture on a monitor, with a free-threaded frame pool so frames arrive off the UI thread. Desktop Duplication is the fallback if a requirement cannot be met. | — | Not implemented in the host. Windows.Graphics.Capture worked in experiment 01, step 1; Desktop Duplication was not needed. |
+| **Video encoder** | Texture in, H.264 access units out, entirely on the GPU where a hardware encoder exists. Low-latency settings, no B-frames, keyframe on demand, bitrate changeable at run time. Proposed: Media Foundation hardware encoder transform. | Decide *when* to drop frames; that is the coordinator's backpressure policy. | Not implemented in the host. The proposed transform worked in experiment 01, step 1, which also found that it needs a 1 ms Windows timer to keep up. Keyframe on demand and run-time bitrate changes are untried. |
 | **Protocol framing** | Serialises control messages and wraps access units in frames per the [protocol draft](../../protocol/specification/protocol.md). Enforces size limits on everything received. | Know which transport it runs over. | Not implemented. |
 | **USB transport** | Finds `adb`, selects the device, sets up the port forward, and yields a duplex byte stream. Removes the forward on teardown. | Carry any protocol knowledge. | Not implemented. |
 | **Wi-Fi transport** | Discovery, authenticated connection, and the same duplex byte stream. | Accept any data before authentication succeeds. | Not implemented; design depends on pairing. |
@@ -71,7 +76,7 @@ distribution is understood, because the installer will also have to deliver the 
 | --- | --- | --- |
 | **UI** (`ui/`, Jetpack Compose) | Connect screen, host list, session status, later the full-screen display surface. Observes state; issues intents. | Shell implemented: Connect and About screens, navigation. |
 | **Connection management** (`connection/`) | `ConnectionStateMachine` mirrors the host's session states. `ConnectionController` is the single interface the UI sees. Behind it will sit the transports, handshake and keepalive. | State machine implemented and tested. The only controller is `IdleConnectionController`, which never leaves `Disconnected`. |
-| **Receive and decode** (future `video/`) | Reads frames, feeds access units to a hardware `MediaCodec` decoder configured for low latency with a `Surface` as output, requests keyframes after errors or surface recreation, and reports statistics. | Not implemented. |
+| **Receive and decode** (future `video/`) | Reads frames, feeds access units to a hardware `MediaCodec` decoder configured for low latency with a `Surface` as output, requests keyframes after errors or surface recreation, and reports statistics. | Not implemented in the app. A debug-only screen decodes captured files with `MediaCodec` onto a `SurfaceView`, and did so on one tablet's hardware decoder (experiment 01, step 2a). It reads a file, not a connection. |
 | **Session service** | A foreground service will own the connection so a session survives the activity being recreated or backgrounded. | Not implemented. |
 
 The UI never touches sockets or codecs, and the decoder never knows which transport fed it.

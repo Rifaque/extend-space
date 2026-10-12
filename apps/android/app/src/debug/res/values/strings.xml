@@ -1,0 +1,40 @@
+<resources>
+    <!-- Debug builds only: the H.264 decoder validation screen. -->
+    <string name="decoder_test_launcher_label">ExtendSpace decoder test</string>
+    <string name="decoder_test_title">H.264 decoder validation</string>
+    <string name="decoder_test_subtitle">Debug build only. Plays a .h264 file captured by the ExtendSpace Windows experiment through this device\'s decoder. Nothing is streamed.</string>
+
+    <string name="decoder_test_section_sample">Sample file</string>
+    <string name="decoder_test_no_samples">No .h264 files found. Push one with adb to %1$s and tap Refresh, or choose a file.</string>
+    <string name="decoder_test_refresh">Refresh</string>
+    <string name="decoder_test_choose_file">Choose file…</string>
+
+    <string name="decoder_test_section_decoder">Decoder</string>
+    <string name="decoder_test_decoder_automatic">Automatic</string>
+    <string name="decoder_test_option_paced">Show frames at the stream\'s frame rate</string>
+    <string name="decoder_test_option_low_latency">Request low-latency decoding</string>
+    <string name="decoder_test_play">Decode</string>
+    <string name="decoder_test_stop">Stop</string>
+
+    <string name="decoder_test_section_result">Result</string>
+    <string name="decoder_test_value_none">—</string>
+    <string name="decoder_test_row_state">State</string>
+    <string name="decoder_test_row_error">Error</string>
+    <string name="decoder_test_row_file">File</string>
+    <string name="decoder_test_row_input">Input stream</string>
+    <string name="decoder_test_row_decoder">Decoder</string>
+    <string name="decoder_test_row_capability">Reported capability</string>
+    <string name="decoder_test_row_low_latency">Low latency</string>
+    <string name="decoder_test_row_output">Decoder output</string>
+    <string name="decoder_test_row_queued">Pictures queued</string>
+    <string name="decoder_test_row_decoded">Frames decoded</string>
+    <string name="decoder_test_row_displayed">Reported displayed</string>
+    <string name="decoder_test_row_elapsed">Elapsed</string>
+    <string name="decoder_test_row_first_frame">Time to first frame</string>
+    <string name="decoder_test_row_fps">Frames per second</string>
+    <string name="decoder_test_fps_paced">" (held to the stream\'s frame rate)"</string>
+    <string name="decoder_test_fps_unpaced">" (as fast as the device decodes and shows them)"</string>
+
+    <string name="decoder_test_section_capabilities">What this device reports</string>
+    <string name="decoder_test_capabilities_note">From MediaCodecList. These are the device\'s own claims, not test results.</string>
+</resources>

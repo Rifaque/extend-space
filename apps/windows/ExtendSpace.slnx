@@ -1,9 +1,13 @@
 <Solution>
+  <Folder Name="/experiments/">
+    <Project Path="experiments/ExtendSpace.Experiments.CaptureEncode/ExtendSpace.Experiments.CaptureEncode.csproj" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/ExtendSpace.Core/ExtendSpace.Core.csproj" />
     <Project Path="src/ExtendSpace.Host/ExtendSpace.Host.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/ExtendSpace.Core.Tests/ExtendSpace.Core.Tests.csproj" />
+    <Project Path="tests/ExtendSpace.Experiments.CaptureEncode.Tests/ExtendSpace.Experiments.CaptureEncode.Tests.csproj" />
   </Folder>
 </Solution>

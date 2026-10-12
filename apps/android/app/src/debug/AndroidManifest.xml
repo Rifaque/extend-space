@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Merged into debug builds only. A release build has neither this entry nor the class. -->
+    <application>
+        <!-- Exported, with its own launcher entry, so that it can be opened from the launcher or
+             with `adb shell am start` without adding a way into it from the app's own screens. -->
+        <activity
+            android:name=".decodertest.DecoderValidationActivity"
+            android:exported="true"
+            android:label="@string/decoder_test_launcher_label">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>

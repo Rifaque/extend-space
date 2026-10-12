@@ -31,7 +31,8 @@ The initial development focus is establishing the streaming pipeline and validat
 | Session state model on both platforms, with unit tests | Implemented |
 | Protocol | Draft specification only |
 | USB transport, Wi-Fi transport, pairing | Not implemented |
-| Display capture, video encoding, decoding | Not implemented; first experiment planned |
+| Display capture and H.264 encoding | Proven in a standalone experiment that writes a `.h264` file; not part of the app |
+| Video decoding on Android | Proven on one tablet by a debug-only screen that plays a captured `.h264` file; not part of the app |
 | Virtual display driver (Extend mode) | Not implemented; feasibility researched |
 
 Both apps say so in their own UI: the Connect button on Windows is disabled, with the reason shown.
@@ -45,7 +46,7 @@ Both apps say so in their own UI: the Connect button on Windows is disabled, wit
 
 ```
 apps/
-  windows/     C# / .NET 10 / WinUI 3 host, core library and tests
+  windows/     C# / .NET 10 / WinUI 3 host, core library, experiments and tests
   android/     Kotlin / Jetpack Compose companion
 protocol/
   specification/protocol.md

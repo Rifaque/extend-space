@@ -21,6 +21,11 @@ BundleArtifacts/
 *.pfx
 *.snk
 
+# ---- Experiments ----
+# Captured video is a recording of someone's real screen. It must never be committed.
+*.h264
+artifacts/
+
 # ---- Android / Gradle (apps/android) ----
 .gradle/
 .kotlin/
