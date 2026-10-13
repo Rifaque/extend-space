@@ -94,51 +94,7 @@ internal sealed class RunReport(CaptureOptions options)
         Line($"Result: {(Succeeded ? "SUCCEEDED" : "FAILED")}");
         Line($"Stopped because: {StopReason ?? "the run did not get as far as capturing"}");
 
-        Heading("Capture source [measured]");
-        Line($"  Monitor:            {Describe(Monitor)}");
-        Line($"  Capture API:        Windows.Graphics.Capture, free-threaded frame pool, BGRA8, {Capture.MonitorCapture.FramePoolBuffers} buffers");
-        Line($"  Capture resolution: {Describe(CaptureSize)} (reported by the capture item)");
-        Line($"  Encoded resolution: {Describe(Geometry)}");
-        Line($"  Graphics adapter:   {AdapterName ?? Unavailable} (Direct3D {FeatureLevel ?? Unavailable})");
-        Line($"  Cursor in capture:  {(Options.CaptureCursor ? "yes" : "no")}");
-        Line($"  Capture border:     {Border ?? Unavailable}");
-        Line($"  Frame-rate limit:   {RateLimit ?? Unavailable}");
-        Line($"  Timer resolution:   {TimerResolution ?? Unavailable}");
-
-        Heading("Configuration [requested, not measured]");
-        Line($"  Duration:           {Options.Duration.TotalSeconds:0.###} s{(Options.MaxFrames is { } max ? $", or {max} frames if sooner" : string.Empty)}");
-        Line($"  Frame rate:         {Options.FrameRate} fps");
-        Line($"  Bitrate:            {Options.BitrateBitsPerSecond:N0} bit/s");
-        Line($"  Keyframe interval:  {Options.KeyframeIntervalFrames} frames ({Options.KeyframeIntervalSeconds:0.###} s)");
-        Line($"  Output size:        {(Options.OutputSize is { } size ? $"{size.Width} x {size.Height}" : "the monitor's own size")}");
-        Line($"  H.264 profile:      {Options.Profile}");
-        Line($"  Encoder preference: {Options.Encoder}");
-
-        Heading("Encoder [identity as reported by Media Foundation]");
-        if (Encoder is null)
-        {
-            Line($"  No encoder was opened.");
-        }
-        else
-        {
-            Line($"  Name:               {Encoder.Name}");
-            Line($"  CLSID:              {Encoder.Clsid:B}");
-            Line($"  Acceleration:       {Acceleration?.Status.ToString().ToUpperInvariant() ?? Unavailable}");
-            Line($"    Why:              {Acceleration?.Reason ?? Unavailable}");
-            Line($"    Evidence:         listed as hardware transform: {YesNo(Encoder.EnumeratedAsHardware)}; hardware vendor: {Encoder.HardwareVendorId ?? "none"}");
-            Line($"                      hardware device URL: {Encoder.HardwareUrl ?? "none"}");
-            Line($"                      asynchronous: {YesNo(Encoder.IsAsync)}; Direct3D 11 aware: {YesNo(Encoder.IsD3D11Aware)}; accepted the device manager: {YesNo(Encoder.AcceptedD3DManager)}");
-            Line($"  Encoder properties (ICodecAPI):");
-            foreach (string setting in EncoderSettings)
-            {
-                Line($"    {setting}");
-            }
-        }
-
-        foreach (string rejected in RejectedEncoders)
-        {
-            Line($"  Tried and rejected: {rejected}");
-        }
+        WriteSourceAndEncoder(writer);
 
         Heading("Frames [measured]");
         Line($"  Delivered by the capture API:           {Frames.Delivered}");
@@ -211,6 +167,64 @@ internal sealed class RunReport(CaptureOptions options)
         }
 
         writer.WriteLine();
+    }
+
+    /// <summary>The sections that describe what was captured, what was asked for and which encoder ran.</summary>
+    public void WriteSourceAndEncoder(TextWriter writer)
+    {
+        CultureInfo invariant = CultureInfo.InvariantCulture;
+        void Line(FormattableString text) => writer.WriteLine(text.ToString(invariant));
+        void Heading(string text)
+        {
+            writer.WriteLine();
+            writer.WriteLine(text);
+        }
+
+        Heading("Capture source [measured]");
+        Line($"  Monitor:            {Describe(Monitor)}");
+        Line($"  Capture API:        Windows.Graphics.Capture, free-threaded frame pool, BGRA8, {Capture.MonitorCapture.FramePoolBuffers} buffers");
+        Line($"  Capture resolution: {Describe(CaptureSize)} (reported by the capture item)");
+        Line($"  Encoded resolution: {Describe(Geometry)}");
+        Line($"  Graphics adapter:   {AdapterName ?? Unavailable} (Direct3D {FeatureLevel ?? Unavailable})");
+        Line($"  Cursor in capture:  {(Options.CaptureCursor ? "yes" : "no")}");
+        Line($"  Capture border:     {Border ?? Unavailable}");
+        Line($"  Frame-rate limit:   {RateLimit ?? Unavailable}");
+        Line($"  Timer resolution:   {TimerResolution ?? Unavailable}");
+
+        Heading("Configuration [requested, not measured]");
+        Line($"  Duration:           {Options.Duration.TotalSeconds:0.###} s{(Options.MaxFrames is { } max ? $", or {max} frames if sooner" : string.Empty)}");
+        Line($"  Frame rate:         {Options.FrameRate} fps");
+        Line($"  Bitrate:            {Options.BitrateBitsPerSecond:N0} bit/s");
+        Line($"  Keyframe interval:  {Options.KeyframeIntervalFrames} frames ({Options.KeyframeIntervalSeconds:0.###} s)");
+        Line($"  Output size:        {(Options.OutputSize is { } size ? $"{size.Width} x {size.Height}" : "the monitor's own size")}");
+        Line($"  H.264 profile:      {Options.Profile}");
+        Line($"  Encoder preference: {Options.Encoder}");
+
+        Heading("Encoder [identity as reported by Media Foundation]");
+        if (Encoder is null)
+        {
+            Line($"  No encoder was opened.");
+        }
+        else
+        {
+            Line($"  Name:               {Encoder.Name}");
+            Line($"  CLSID:              {Encoder.Clsid:B}");
+            Line($"  Acceleration:       {Acceleration?.Status.ToString().ToUpperInvariant() ?? Unavailable}");
+            Line($"    Why:              {Acceleration?.Reason ?? Unavailable}");
+            Line($"    Evidence:         listed as hardware transform: {YesNo(Encoder.EnumeratedAsHardware)}; hardware vendor: {Encoder.HardwareVendorId ?? "none"}");
+            Line($"                      hardware device URL: {Encoder.HardwareUrl ?? "none"}");
+            Line($"                      asynchronous: {YesNo(Encoder.IsAsync)}; Direct3D 11 aware: {YesNo(Encoder.IsD3D11Aware)}; accepted the device manager: {YesNo(Encoder.AcceptedD3DManager)}");
+            Line($"  Encoder properties (ICodecAPI):");
+            foreach (string setting in EncoderSettings)
+            {
+                Line($"    {setting}");
+            }
+        }
+
+        foreach (string rejected in RejectedEncoders)
+        {
+            Line($"  Tried and rejected: {rejected}");
+        }
     }
 
     private const string Unavailable = "unavailable";

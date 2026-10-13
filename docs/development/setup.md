@@ -28,7 +28,7 @@ dotnet build ExtendSpace.slnx
 dotnet test --solution ExtendSpace.slnx
 dotnet run --project src/ExtendSpace.Host
 
-# Capture-and-encode experiment: writes a .h264 file of the primary monitor
+# Capture-and-encode experiment: writes a .h264 file of the primary monitor, or streams it to a device
 dotnet run --project experiments/ExtendSpace.Experiments.CaptureEncode -- --help
 ```
 
@@ -50,8 +50,8 @@ Projects:
 | `src/ExtendSpace.Core` | `net10.0` | Session state machine, capabilities, view models. No UI or Windows dependency. |
 | `src/ExtendSpace.Host` | `net10.0-windows10.0.26100.0`, minimum Windows 11 (22000) | WinUI 3 application. Builds `ExtendSpace.exe`. |
 | `tests/ExtendSpace.Core.Tests` | `net10.0` | xUnit v3 tests for `ExtendSpace.Core`. |
-| `experiments/ExtendSpace.Experiments.CaptureEncode` | `net10.0-windows10.0.26100.0`, minimum Windows 11 (22000) | Console experiment: display capture to an H.264 file. Builds `ExtendSpace.CaptureEncode.exe`. Not referenced by the app. See [experiment 01](../architecture/streaming-experiment-01.md#step-1--capture-and-encode-to-a-file). |
-| `tests/ExtendSpace.Experiments.CaptureEncode.Tests` | `net10.0-windows10.0.26100.0` | xUnit v3 tests for the experiment's deterministic logic. They do not capture or encode anything. |
+| `experiments/ExtendSpace.Experiments.CaptureEncode` | `net10.0-windows10.0.26100.0`, minimum Windows 11 (22000) | Console experiment: display capture to an H.264 file, or live to an Android device over `adb forward`. Builds `ExtendSpace.CaptureEncode.exe`. Not referenced by the app. See [experiment 01](../architecture/streaming-experiment-01.md). |
+| `tests/ExtendSpace.Experiments.CaptureEncode.Tests` | `net10.0-windows10.0.26100.0` | xUnit v3 tests for the experiment's deterministic logic, including the protocol framing and the host session against a fake client on a loopback socket. They do not capture or encode anything and need no device. |
 
 ## Android companion
 
@@ -69,10 +69,16 @@ cd apps/android
 - Application ID `com.rsxdevelops.extendspace`. Change it before any public release if RSX Develops
   owns a different reverse-domain name; it cannot be changed after publishing.
 - The app requests no permissions yet.
-- Debug builds contain one extra screen, "ExtendSpace decoder test", which plays a `.h264` file
-  captured by the Windows experiment through the device's H.264 decoder. Its code, manifest entry
-  and tests are in `app/src/debug` and `app/src/testDebug`, so release builds have none of it. How
-  to use it is in [experiment 01](../architecture/streaming-experiment-01.md#reproduce).
+- Debug builds contain two extra screens. "ExtendSpace decoder test" plays a `.h264` file captured
+  by the Windows experiment through the device's H.264 decoder; how to use it is in
+  [experiment 01](../architecture/streaming-experiment-01.md#reproduce). "ExtendSpace live test"
+  listens on a local socket and shows the stream the Windows experiment sends through
+  `adb forward`; see [how to run](../architecture/streaming-experiment-01.md#how-to-run). Their
+  code, manifest entries and tests are in `app/src/debug` and `app/src/testDebug`, so release builds
+  have none of it. Neither needs a permission.
+- `org.json` is a `testImplementation` dependency only. The live screen's control messages use the
+  `org.json` classes that are part of Android; unit tests run on a desktop JVM, where those classes
+  are stubs, so the tests bring a real implementation. Nothing is added to any APK.
 - Xiaomi HyperOS refuses `adb install` (`INSTALL_FAILED_USER_RESTRICTED`) until *Developer options →
   Install via USB* is switched on, on the device, by its owner.
 
@@ -158,6 +164,17 @@ Android decoder validation, 2026-10-12:
 | `adb install -r app-debug.apk` on the Xiaomi Pad 7 | Succeeded, after *Install via USB* was enabled on the tablet |
 | Decoder test screen on the tablet, five real captures | Every picture of every file decoded by the hardware decoder and shown. Figures and limits are in [experiment 01](../architecture/streaming-experiment-01.md#results-on-the-device). |
 | The app's own screens on the tablet | **Not exercised.** Only the decoder test screen was opened. |
+
+Live stream over `adb forward`, 2026-10-13:
+
+| Command | Result |
+| --- | --- |
+| `dotnet build ExtendSpace.slnx`, `dotnet test --solution ExtendSpace.slnx` | 0 warnings, 0 errors; 299 passed, 0 failed: 24 for the app's core, 275 for the experiment |
+| `gradlew assembleDebug testDebugUnitTest lintDebug` | Succeeded; 82 tests passed, 0 failed; lint 0 errors, 1 warning |
+| `gradlew assembleRelease` | Succeeded; neither debug screen, and no `org.json` artifact, is in the release APK |
+| `adb install -r app-debug.apk` on the Xiaomi Pad 7 | Succeeded |
+| `ExtendSpace.CaptureEncode.exe stream …` to the tablet, nine kept runs | A live picture on the tablet in every run that had a client; no frame lost in the sustained runs; reconnection after the app was killed. Figures and limits are in [experiment 01](../architecture/streaming-experiment-01.md#step-3--live-stream-over-adb-forward). |
+| The app's own screens on the tablet | **Still not exercised.** |
 
 Remaining warning: Android lint reports that Gradle 9.8.1 is available; the wrapper stays on 9.7.1,
 the version already cached on this machine.

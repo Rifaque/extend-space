@@ -1,11 +1,14 @@
 # Experiment 01 — USB mirroring, end to end
 
-Status: **step 1 is done, and so is the first half of step 2.** A real Windows display was captured,
-encoded to H.264 by a hardware encoder and written to a `.h264` file that an independent decoder
-reads without error; see [Step 1](#step-1--capture-and-encode-to-a-file). Files from that pipeline
-were then copied to a physical Android tablet and decoded and shown by its hardware decoder; see
-[Step 2a](#step-2a--decode-a-captured-file-on-android). The rest is not started: nothing has been
-framed, sent over ADB or streamed live, and no latency has been measured.
+Status: **all three steps have run; the experiment's success criteria are not yet met.** A real
+Windows display was captured, encoded to H.264 by a hardware encoder and written to a `.h264` file
+that an independent decoder reads without error; see [Step 1](#step-1--capture-and-encode-to-a-file).
+Files from that pipeline were copied to a physical Android tablet and decoded and shown by its
+hardware decoder; see [Step 2a](#step-2a--decode-a-captured-file-on-android). Then the live desktop
+was streamed over USB through `adb forward` and shown on the tablet, for up to three minutes at a
+time, with frame counts and a latency figure measured as far as the tablet's display surface; see
+[Step 3](#step-3--live-stream-over-adb-forward). Still missing: a ten-minute run, glass-to-glass
+latency, a controlled 60 fps source, and a cable actually pulled.
 
 Goal: prove the riskiest assumptions of Mirror mode with the least code — that a Windows display can
 be captured, hardware-encoded to H.264, carried over ADB, hardware-decoded on Android and shown on a
@@ -16,13 +19,15 @@ findings are the deliverable.
 
 ```
 Windows display ─► capture ─► H.264 encode ─► framing ─► adb forward ─► framing ─► MediaCodec ─► Surface
-└──────────── step 1: exists ───────────┘   └────────── design only ─────────┘   └── step 2a: exists ──┘
+└──────────── step 1 ───────────────────┘                                        └────── step 2a ──────┘
                                         └────────── .h264 file, copied with adb push ──────────┘
+└──────────────────────────────── step 3: live, all of it exists ──────────────────────────────┘
 ```
 
 ## Boundaries and proposed APIs
 
-The first two rows are what step 1 implemented, as proposed. The rest is still a proposal.
+Every row has now been implemented in the experiment, as proposed, across steps 1 to 3. The notes
+are the original proposals; where a step found otherwise, its section says so.
 
 | Boundary | Proposed API | Carries | Notes |
 | --- | --- | --- | --- |
@@ -50,10 +55,11 @@ Build it in three steps, each verifiable alone, so a failure is attributable:
    player. Proves capture, colour conversion and the encoder without any Android code.
    **Done; see below.**
 2. **File → Android.** Push that file through the socket and decode it on the device. Proves framing,
-   transport and decoding with known-good input. **Half done:** the file has been decoded on a
-   device from storage ([step 2a](#step-2a--decode-a-captured-file-on-android)). Sending it through
-   the socket with framing is not started.
-3. **Live.** Connect step 1's encoder to step 2's sender. **Not started.**
+   transport and decoding with known-good input. **Done in two parts, not as planned:** the file was
+   decoded on a device from storage ([step 2a](#step-2a--decode-a-captured-file-on-android)); the
+   socket and the framing were then proven with live video in step 3, without a file replay.
+3. **Live.** Connect step 1's encoder to step 2's sender. **Done; see
+   [step 3](#step-3--live-stream-over-adb-forward).**
 
 ## Step 1 — capture and encode to a file
 
@@ -216,7 +222,8 @@ The capture rate is 53.9 fps, not 60, and the reason is visible in the intervals
 minimum update interval on a 165 Hz panel, Windows delivers on the next refresh after that, every
 third one, 18.18 ms apart — 55 fps at most. The same rounding gave 36.36 ms (27.5 fps) for
 `--fps 30`. Reaching an exact 60 fps on this panel would need a different limit or none; that
-trade-off was not explored.
+trade-off was not explored here. Step 3 changed it; see
+[Changes to capture pacing](#changes-to-capture-pacing).
 
 **All runs.** Every run used `--no-border`, 2560 × 1600, 12 Mbit/s CBR, High profile and a 120-frame
 keyframe interval. "Dropped" is frames replaced before the encoder was ready for them. Files are in
@@ -424,7 +431,8 @@ For the product:
 The next step recommended here was to give the experiment an output size, read a real device's
 decoder limits, and decode a captured file on it. That is [step 2a](#step-2a--decode-a-captured-file-on-android),
 below. The remaining part of that recommendation, replaying a file through `adb forward` with the
-protocol's framing, is the current [next step](#next-step).
+protocol's framing, was overtaken by [step 3](#step-3--live-stream-over-adb-forward), which sent
+live video through it instead.
 
 ## Step 2a — decode a captured file on Android
 
@@ -722,7 +730,10 @@ $samples  = "/sdcard/Android/data/com.rsxdevelops.extendspace/files/decoder-samp
 
 The screen is also in the launcher as "ExtendSpace decoder test": tap a file name, then Decode.
 
-### Next step
+### What was recommended next
+
+This is the recommendation as it stood at the end of step 2a. [Step 3](#step-3--live-stream-over-adb-forward)
+did the transport and the framing, but with the live encoder in place of a file sender.
 
 **Finish step 2: send a captured file through `adb forward` with the protocol's video framing, into
 this same decoder.**
@@ -736,6 +747,472 @@ and the Android decoder session carry over unchanged. That step is also where de
 and the low-latency decoder's real effect can first be measured, because frames will arrive with
 timestamps instead of all at once.
 
+## Step 3 — live stream over adb forward
+
+Run on 2026-10-13. The Windows capture experiment was given a `stream` command and the Android debug
+build a live screen; a live Windows desktop was carried over USB through `adb forward` and shown on
+the tablet, decoded by its hardware decoder.
+
+This section also finishes the second half of step 2. The plan was to replay a file through the
+socket first and go live afterwards. The replay sender was not built: once the framing had unit
+tests on both sides against the same byte-exact examples, the live encoder was connected directly,
+and transport, framing and decoding were proven with live input instead. Nothing here was measured
+with a file.
+
+Everything below is the experiment, not the product. The WinUI host and the Android app's own
+screens are unchanged and still cannot connect.
+
+### Who listens, and why it is not Windows
+
+The brief for this step said Windows should listen. It does not; the Android app does. That is the
+design the [protocol draft](../../protocol/specification/protocol.md#3-transport-bindings) and the
+[boundaries table](#boundaries-and-proposed-apis) above already had, and it was kept deliberately:
+
+```
+Windows                                             Android
+ExtendSpace.CaptureEncode.exe ──TCP──► 127.0.0.1:27183 ══ adb ══► localabstract:extendspace ◄── the app listens
+        connects                       (adb listens,               (LocalServerSocket, not a
+                                        loopback only)              network socket)
+```
+
+- The only listening socket on the PC belongs to `adb`, on the loopback interface. The experiment
+  opens no listener at all, so nothing is offered to the LAN and no firewall prompt appears.
+- The Android app listens on an abstract local socket, which is not reachable from any network. It
+  holds no network permission. It reads the peer's credentials and closes any connection whose
+  user ID is not the ADB shell user (2000) or root (0). Every connection in these runs was accepted,
+  so the check passes for `adb`; that it *refuses* another app was not tested on the device, because
+  that needs a second app.
+- The alternative, `adb reverse` with a Windows listener, would have put a listening socket in a
+  process that also captures the screen, to save nothing.
+
+The host sets the forward up itself (`adb forward tcp:27183 localabstract:extendspace`) and removes
+it when it stops. `--no-adb-forward` skips both for a forward made by hand.
+
+### What was built
+
+**Windows** — `apps/windows/experiments/ExtendSpace.Experiments.CaptureEncode`:
+
+| Part | File | Does |
+| --- | --- | --- |
+| Shared pipeline | `CapturePipeline.cs` | The capture → NV12 → encoder path of step 1, lifted out of `ExperimentRunner.cs` so that writing a file and streaming run the same code up to the encoded access unit. The file command was re-verified after the move. |
+| Framing | `Streaming/Protocol.cs`, `Streaming/FrameParser.cs` | The preface, the 8-byte header, the per-channel limits (checked before a payload is read) and an incremental parser that accepts bytes in any split. |
+| Control messages | `Streaming/ControlMessages.cs` | The ten control messages as JSON, with the depth limit. |
+| Video frames | `Streaming/VideoFrames.cs` | Wraps an access unit with its sequence number, timestamp and `KEYFRAME`/`CONFIG` flags; tracks whether the parameter sets have been sent. |
+| Backpressure | `Streaming/VideoSendQueue.cs` | A queue of at most 4 frames. When it is full it drops, and then refuses everything up to the next keyframe, which it asks the encoder for. |
+| Timing | `Streaming/Timing.cs` | The host clock, the clock-offset estimate from `ping`/`pong`, reconnect backoff (250 ms doubling to 4 s, within a budget), and the keyframe-request rate limit (one per 500 ms). |
+| Session | `Streaming/HostSession.cs`, `Streaming/ConnectionReader.cs` | Connects, runs the handshake, then one thread reads and one thread owns the write side. Drives `Connecting → Negotiating → Streaming → Reconnecting/Disconnected/Failed`. |
+| Transport | `Streaming/AdbForward.cs` | Finds `adb`, makes the forward, removes it. The only file that knows ADB exists. |
+| Run and report | `Streaming/StreamRunner.cs`, `Streaming/StreamReport.cs` | Ties the pipeline to the session, prints a line a second and a report at the end. |
+| Encoder | `Encoding/H264Encoder.cs` | Gained keyframe on request (`CODECAPI_AVEncVideoForceKeyFrame`), which step 1 did not have. |
+
+**Android** — `apps/android/app/src/debug/java/com/rsxdevelops/extendspace/livestream`, debug builds
+only:
+
+| Part | File | Does |
+| --- | --- | --- |
+| Framing and messages | `protocol/Protocol.kt`, `protocol/FrameParser.kt`, `protocol/ControlMessages.kt` | The same framing, limits and messages as the Windows side. |
+| Session | `LiveSession.kt` | `LocalServerSocket`, the peer check, the handshake, the receive loop, statistics once a second, and listening again after a connection ends. |
+| Decoder | `LiveDecoder.kt` | One `MediaCodec` in asynchronous mode, configured from the SPS and PPS of the first `CONFIG` frame, output to the `SurfaceView`. Each decoded frame is released at once, with no pacing. |
+| Stream health | `VideoGate.kt` | Decides, frame by frame, whether to decode: it stops at a sequence gap and waits for a `CONFIG | KEYFRAME` frame. Also the client's keyframe-request limiter. |
+| Latency | `LatencyTracker.kt` | Turns host timestamps into local ones and keeps per-second summaries. |
+| Screen | `LiveStreamActivity.kt`, `LiveStreamViewModel.kt` | The video, a status overlay, and a result file written when a connection ends. In the launcher as "ExtendSpace live test". |
+
+The step 2a decoder screen is untouched; the live screen reuses its SPS parser and decoder catalogue.
+
+Access units are sent exactly as the encoder produced them, Annex B, parameter sets in-band in
+front of every keyframe. The first frame of every connection is a keyframe the host forces, flagged
+`CONFIG | KEYFRAME`.
+
+**Release builds.** After the last change `gradlew assembleRelease` was run and the APK inspected:
+the merged manifest lists `MainActivity` as its only activity, and no string `livestream`,
+`LiveStream`, `decodertest` or `org/json` occurs in its dex files (the debug APK has 27 lines
+matching `livestream`). `org.json`, which the control codec uses, is part of Android; the artifact
+added to the build is a `testImplementation` dependency so that the unit tests can run on a desktop
+JVM, and it ships in nothing.
+
+### Changes to capture pacing
+
+Step 1 found that limiting capture with `MinUpdateInterval` set to one frame interval rounds up to a
+whole number of display refreshes, giving 55 fps for a 60 fps request on a 165 Hz panel. Two changes
+were made here, and both also apply to the file command:
+
+- `MinUpdateInterval` is now **half** a frame interval. Windows still discards the frames that are
+  far too early, but no longer decides the rate.
+- `FramePacer` became a token bucket holding at most two tokens. The old pacer refused any frame
+  that came sooner than one interval after the last accepted one; 60 fps content on a 143 Hz monitor
+  arrives 14 ms and 21 ms apart by turns, so it lost a frame every time one came early and delivered
+  well under the target. With the bucket, a late frame does not cost the next one. The price is that
+  after a pause one extra frame may be taken straight away.
+
+Measured effect: the 720p30 run below sent 30.00 fps for 120 s from a source offering about 49 fps,
+and a 30 s 1080p60 run sent 59.15 fps from a source offering about 78 fps.
+
+### How to run
+
+```powershell
+# Tablet: open the live screen. -S restarts the app so that any options are applied.
+$adb = "$env:ANDROID_HOME\platform-tools\adb.exe"
+& $adb shell am start -S -n com.rsxdevelops.extendspace/.livestream.LiveStreamActivity
+
+# PC, from apps\windows: capture the primary monitor and stream it
+dotnet run --project experiments\ExtendSpace.Experiments.CaptureEncode -- stream `
+    --output-size 1280x720 --fps 30 --bitrate 6M --duration 120 --no-border
+dotnet run --project experiments\ExtendSpace.Experiments.CaptureEncode -- stream `
+    --output-size 1920x1080 --fps 60 --bitrate 12M --duration 180 --no-border
+
+# Afterwards: the client's own account of the last connection
+& $adb shell cat /sdcard/Android/data/com.rsxdevelops.extendspace/files/live-last-result.txt
+& $adb logcat -d -s ExtendSpaceLive
+
+# Variations on the tablet
+& $adb shell am start -S -n com.rsxdevelops.extendspace/.livestream.LiveStreamActivity --ez lowLatency false
+& $adb shell am start -S -n com.rsxdevelops.extendspace/.livestream.LiveStreamActivity --es decoder c2.qti.avc.decoder.low_latency
+& $adb shell am start -S -n com.rsxdevelops.extendspace/.livestream.LiveStreamActivity --es decoder c2.android.avc.decoder
+```
+
+`stream` takes the capture options of step 1 except `--output` and `--max-frames`, and adds:
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--port <number>` | `27183` | Loopback TCP port to forward and connect to. |
+| `--device <serial>` | the only device | adb serial, when more than one device is attached. |
+| `--adb <path>` | `ANDROID_HOME`, then `PATH` | Which `adb.exe` to use. |
+| `--no-adb-forward` | forward made and removed | The port is already forwarded; leave it alone. |
+| `--reconnect-seconds <n>` | `30` | Give up if the connection cannot be opened, or re-opened after a loss, within this long. |
+
+`--duration` counts from the moment the stream starts, not from launch. The order does not matter
+much: if the live screen is not open yet the host keeps retrying for `--reconnect-seconds`. Exit
+codes are as before: 0 the stream ran and ended in an orderly way, 1 it failed, 2 invalid arguments.
+
+### Conditions
+
+| | |
+| --- | --- |
+| PC | The machine of step 1, now docked and **on mains power**. Windows 11 Home, build 26300. Debug build. |
+| Source | Primary monitor `\\.\DISPLAY5`, 2560 × 1440 at 143 Hz, driven by the NVIDIA GeForce RTX 5060 Laptop GPU. Scaled on the GPU to the encoded size. |
+| Encoder | NVIDIA H.264 Encoder MFT, classified hardware by the same three criteria as before. High profile, CBR, 2 s keyframe interval, low-latency mode. |
+| Tablet | Xiaomi Pad 7 (`2410CRP4CI`), Android 16, over USB. Battery about 93 %. Display reported as 3200 × 2136 at 120 Hz. |
+| Decoder | `c2.qti.avc.decoder`, hardware, the platform's own choice, with the low-latency key set, unless a row says otherwise. |
+| Screen content | **Partly controlled.** A 1920 × 1080 window showing ffmpeg's `testsrc2` pattern at a nominal 60 fps, with a running frame counter, was placed on the monitor with the machine's owner's agreement. It covers 56 % of the monitor; the rest was the desktop, and the machine stayed in use. |
+
+The pattern is what makes the frame rates below meaningful at all — without it the capture API
+delivers nothing while the screen is still — but it is not a metronome. `ffplay` presents on the
+compositor's schedule, other windows add changes of their own, and the capture API reported
+anything from 21 to 85 frames in a second while it ran. So a second in which fewer than 60 frames
+were sent is, as a rule, a second in which fewer than 60 arrived to send. The per-second figures say
+which.
+
+### What the counters mean
+
+| Counter | Counted where | Meaning |
+| --- | --- | --- |
+| Delivered | host | Frames the capture API handed over. |
+| Skipped by the pacer | host | Delivered sooner than the target rate allows; released unencoded. |
+| Skipped, no client | host | Delivered while no client was streaming; released unencoded. |
+| Encoded | host | Access units that came out of the encoder. |
+| Dropped | host | Encoded but not sent: send queue full, waiting for a keyframe after such a drop, or still queued when a connection ended. Each kind is counted separately. |
+| Transmitted | host | Written to the socket in full. |
+| Received | client | Read from the socket in full. |
+| Missing | client | Sequence numbers that never arrived. |
+| Discarded | client | Received but not given to the decoder: no surface, waiting for a keyframe, or backlog. |
+| Decoded | client | Output frames the decoder returned. |
+| Rendered | client | Decoded frames released to the display surface. This is the last point the app can observe. |
+
+The client's totals reach the host in its `stats` messages. When a run ends the host stops sending
+and waits, for up to 3 s, for a report that accounts for everything it transmitted before it says
+goodbye, and it prints both sides in one report. "Rendered" is not "seen": the tablet's
+compositor decides what reaches the panel and when. Android's frame-rendered callback agreed with
+the rendered count in every run, but Android documents it as informational.
+
+Frame rates are counts divided by the measurement window, which runs from the first completed
+handshake to the stop. They are averages over the whole run, including seconds in which the source
+offered little.
+
+### Results
+
+The full host report, the client's result file and a screenshot from the tablet for each run are in
+`artifacts/experiment-01/live/` (git-ignored, because they show the screen).
+
+**A live picture did render.** The handshake completed 60 to 82 ms after the host started
+connecting, and screenshots taken from the tablet with `adb exec-out screencap` during each run
+show the Windows desktop and the moving test pattern, with its frame counter advancing between
+shots, complete and correctly coloured. That was judged by eye.
+
+**Sustained runs**
+
+| | 1280 × 720, 30 fps target | 1920 × 1080, 60 fps target |
+| --- | --- | --- |
+| Run | `sustained-720p30` | `sustained-1080p60` |
+| Bitrate target | 6 Mbit/s | 12 Mbit/s |
+| Measured duration | 120.018 s | 180.013 s |
+| Delivered by capture | 5907 | 10,566 |
+| Skipped by the pacer | 2304 | 1796 |
+| Encoded | 3601 | 8765 |
+| Transmitted | 3601 (61 keyframes) | 8765 (74 keyframes) |
+| Bytes transmitted | 83,203,273 | 164,187,950 |
+| Received by the client | 3601, 83,203,273 bytes | 8765, 164,187,950 bytes |
+| Missing / discarded | 0 / 0 | 0 / 0 |
+| Decoded | 3601 | 8765 |
+| Rendered | 3601 | 8765 |
+| Dropped anywhere, host or client | 0 | 0 |
+| Decoder errors | 0 | 0 |
+| Average frame rate, capture delivered | 49.19 fps | 58.65 fps |
+| **Average frame rate, transmitted = rendered** | **30.00 fps** | **48.69 fps** |
+| Average bitrate | 5.546 Mbit/s (693,256 bytes/s) | 7.297 Mbit/s (912,091 bytes/s) |
+| Transmitted per second, min / median / max | 29.22 / 29.98 / 30.69 fps | 20.78 / 57.64 / 61.01 fps |
+| Largest send queue seen | 1 frame | 1 frame |
+| Host processor time | 3.7 % of one logical processor | 5.3 % of one logical processor |
+| Host peak working set | 116.3 MiB | 119.2 MiB |
+
+- **The 720p30 run hit its target in every one of its 120 seconds** (never below 29.2 fps) and not
+  one frame was lost between the encoder and the tablet's surface.
+- **The 1080p60 run did not average 60 fps, and should not be described as a 60 fps result.** It
+  averaged 48.69 fps. Nothing was dropped: all 8765 encoded frames were rendered, and the send queue
+  never held more than one frame. The shortfall is on the supply side. The capture API delivered 60
+  or more frames in only 102 of the 180 seconds; in those seconds the stream carried a median of
+  59.4 fps (minimum 53.1), and 71 of them carried 59 or more. In the other 78 seconds fewer than 60
+  frames arrived to begin with. A 30 s run under the same settings a few minutes later
+  (`variant-1080p60-no-lowlatency-key`, below) happened to get a steadier source and carried
+  59.15 fps. An earlier 180 s run, with a slightly older client build and not kept, carried 10,210
+  frames, 56.72 fps, also with no drops.
+- So the claim these runs support is: **the path carried every frame it was given, at up to about
+  60 fps at 1080p, for three minutes.** Whether it holds a steady 60 fps needs a source that offers
+  a steady 60 fps, and that was not available here.
+- Neither run filled its bitrate target; the pattern is cheap to encode.
+- Memory did not grow in a way that shows at this length: peak working set was 116 to 120 MiB in
+  every run from 20 s to 180 s. The longest run is three minutes, not the ten the success criteria
+  ask for. Client memory was not measured.
+
+**Decoder variants**, 30 s each at 1920 × 1080, 60 fps and 12 Mbit/s target:
+
+| Run | Decoder on the tablet | Transmitted | Rendered | Discarded by the client | Average fps | Mbit/s | Capture → released, mean |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `variant-1080p60-no-lowlatency-key` | `c2.qti.avc.decoder`, low-latency key **not** set | 1775 | 1775 | 0 | 59.15 | 11.632 | 19.31 ms |
+| `variant-1080p60-lowlatency-decoder` | `c2.qti.avc.decoder.low_latency` | 1542 | 1542 | 0 | 51.38 | 10.292 | 16.98 ms |
+| `variant-1080p60-software-decoder` | `c2.android.avc.decoder` (software) | 1616 | 1599 | 15 | 53.86 sent, 53.29 rendered | 10.595 | 61.97 ms |
+
+- The source differed from run to run (78, 53 and 58 fps delivered), so the frame rates in this
+  table compare the screen, not the decoders.
+- The low-latency decoder's mean was about 2 ms lower than the ordinary decoder's 19.0 to 19.3 ms.
+  That is one 30 s run each, at different frame rates, with a clock uncertainty of ±1.6 to 1.8 ms.
+  It is a hint, not a finding.
+- Setting or not setting the low-latency key on the ordinary decoder made no visible difference
+  (19.02 ms in the sustained run with it, 19.31 ms without). That decoder does not report the
+  feature, so no effect is the expected result.
+- The low-latency decoder was sent 10.3 Mbit/s on average against the 7 Mbit/s it reports as its
+  limit, and decoded all of it.
+- The software decoder kept up with the frame rate but took three times as long per frame, and it
+  was the only run in which the client discarded anything: at start-up its backlog passed the limit
+  once, the client dropped 15 frames and asked for a keyframe (`decoder_backlog`), and the picture
+  continued from there. That is the backlog rule working as designed, on real data.
+
+**An idle desktop** (`idle-desktop-1080p60`, 20 s, no test pattern): 302 frames, 15.06 fps,
+1.056 Mbit/s, with whole seconds in which nothing was sent. Nothing was lost; the screen simply did
+not change. The frame rate of this pipeline follows screen activity, and a still screen costs almost
+nothing.
+
+### Latency
+
+**What was measured.** The time from Windows handing a captured frame to the host process, to the
+tablet releasing the decoded frame to its display surface. It is called "capture → released" below.
+
+**How.** Not by subtracting two wall clocks. The two devices' clocks are unrelated and neither is
+trusted:
+
+1. The host stamps each frame with its own monotonic clock (`Stopwatch`) at the moment the capture
+   API's frame-arrived callback runs. That stamp travels in the video frame's `timestamp_us`.
+2. The host sends `ping` with its clock; the tablet answers `pong` with its own monotonic clock
+   (`System.nanoTime`). Taking the reply to have been written halfway through the round trip gives
+   the difference between the two clocks, with an error of at most half the round trip. The host
+   keeps the estimate from the fastest round trip it has seen and sends it back in the next `ping`.
+3. The tablet converts each frame's stamp to its own clock with that estimate and subtracts it from
+   the time it called `releaseOutputBuffer` for that frame. It reports count, minimum, mean, 95th
+   percentile and maximum for each second.
+
+The fastest round trip was 2.2 to 4.5 ms in these runs, so every cross-device figure below carries
+an uncertainty of **±1.1 to ±2.2 ms** from the clock relation alone, and the report of each run
+states its own. The figure on the host alone (capture → encoded) uses one clock and has no such
+term.
+
+| | `sustained-720p30` | `sustained-1080p60` |
+| --- | --- | --- |
+| Clock relation, best round trip | 3.704 ms (±1.852 ms) | 3.209 ms (±1.605 ms) |
+| Capture → encoded, on the host | mean 1.37 ms, median 1.29, p95 1.83, max 12.59 | mean 2.22 ms, median 2.14, p95 2.85, max 10.78 |
+| Capture → received by the app | mean 4.52 ms | mean 5.07 ms |
+| **Capture → released to the surface** | **mean 15.69 ms** | **mean 19.02 ms** |
+| — per-second means, median | 15.7 ms | 18.6 ms |
+| — per-second 95th percentiles, median | 20.7 ms | 25.5 ms |
+| — worst single frame | 139.5 ms | 143.1 ms |
+| — worst frame after the first 3 s | 51.3 ms | 84.4 ms |
+| — seconds whose 95th percentile exceeded 40 ms | 1 of 120, at start-up | 3 of 180, one of them at start-up |
+
+Reading it:
+
+- Subtracting the rows gives a rough budget: about 1.4 to 2.2 ms to encode, about 3 ms from the
+  encoder to the app on the tablet (the socket, `adb`, USB), and about 11 to 14 ms inside the
+  tablet between receiving a frame and releasing its decoded picture. **The tablet's decoder path
+  is the largest part of what was measured.** That interval was not split further, so it includes
+  any wait for a decoder input buffer as well as the decode itself. Over ADB, transport is not the bottleneck at these
+  bitrates.
+- The worst frames are the first ones. A hardware decoder takes around 100 ms to return its first
+  picture, and the frames that arrive meanwhile wait for it. After the first three seconds no frame
+  of the 720p run took more than 51.3 ms.
+- These are single runs. The encoder figures are far lower than step 1's 11 ms because this is a
+  different encoder (NVIDIA, not Quick Sync), a smaller picture and mains power; they are not a
+  comparison.
+
+**What this figure is not.** It is not glass-to-glass latency and must not be quoted as one. It
+leaves out:
+
+- everything before Windows hands the frame over: the application drawing, the compositor, and
+  whatever the capture API adds;
+- everything after the release on the tablet: its compositor, the wait for the next refresh (up to
+  8.3 ms at 120 Hz) and the panel's response;
+- the PC monitor's own delay, which a person comparing the two screens would also see.
+
+**Display time on the tablet is unavailable.** The app asked for it through
+`MediaCodec.setOnFrameRenderedListener`. On this device the callback reported, for every frame,
+the same timestamp the frame had been queued with rather than a time on the display, which made the
+"latency to display" identical to the latency to release. An early build printed that as a display
+latency; it was wrong, it was noticed because the two numbers matched to the microsecond, and the
+client no longer reports it. The only credible way to measure to the glass is still the one in the
+[measurements table](#measurements): a camera filming both screens.
+
+**One more caution about the start of the interval.** Windows stamps each captured frame itself
+(`SystemRelativeTime`), and the experiment compared that stamp with the moment of hand-over: the
+stamp ran *ahead* of the hand-over, by a median of 1.6 ms (720p run) to 3.3 ms (1080p run), with
+occasional frames the other way round by tens of milliseconds. What Windows' stamp marks is not documented
+precisely enough to build a latency figure on, so it is reported and not used. If it marks the
+moment of composition, the true interval is a few milliseconds longer than the table says.
+
+### Disconnect and reconnect
+
+All at 1280 × 720, 30 fps. Performed through `adb`, not by hand.
+
+| Test | What was done | What happened |
+| --- | --- | --- |
+| **Client vanishes** (`reconnect-720p30`) | 12 s into a 60 s stream the app was killed (`am force-stop`), and started again about 6 s later. | The host logged "connection lost: the other side closed the connection" within 0.2 s, went to `Reconnecting`, and retried after 0.25, 0.5, 1, 2 and 4 s. Each retry reached `adb` and was closed at once ("no app is listening"). The retry at 19.98 s found the restarted app; the handshake ran again in full and the state was `Streaming` at 20.04 s, starting with a fresh `CONFIG | KEYFRAME` frame. While no client was connected the host kept capturing but encoded nothing (238 frames released unencoded). |
+| **App sent to the background** (same run) | About 33 s in, the Home key; about 6 s later the live screen was brought back. | The connection stayed up. The client went on receiving about 30 frames a second and discarded them, having no surface to decode onto (158 in all). When the surface came back it sent `request_keyframe` with reason `surface_recreated` (host log, 38.83 s), the host produced a keyframe, and frames were being rendered again within the same second. A screenshot taken afterwards shows the live picture. |
+| **Totals for that run** | | Host: 2 connections established, 1 lost; 1562 frames transmitted, none dropped. Client, both connections: 1546 received, 158 discarded, 1388 submitted, 1387 decoded and rendered, 0 missing, 0 decoder errors. The 16 frames transmitted but never reported received went to the app that was killed, which could not send a final report. |
+| **Client leaves on purpose** (`client-bye`) | 8 s in, the Back key on the live screen. | The client sent its final `stats` and `bye` ("the live screen was closed on the device"). The host ended in `Disconnected`, did **not** try to reconnect, and exited with code 0: 260 transmitted, 259 received, 256 rendered. |
+| **Nothing listening** (`no-client`) | The app was stopped, then the host started with `--reconnect-seconds 6`. | Retries at the same backoff, then `Failed` after 6.6 s with "no connection could be established within 6 s; last problem: the connection was closed before anything arrived; behind an adb port forward that means no app is listening". Exit code 1. The forward was removed (`adb forward --list` empty afterwards). |
+
+Through all of these the app did not crash (no `FATAL EXCEPTION` in the log) and the host process
+ended by itself every time, with capture stopped, the encoder drained and the forward removed.
+
+Seen once, in an earlier run of the reconnect test and not repeated with the final build: removing
+the forward by hand (`adb forward --remove`) while streaming did not break the connection that was
+already open. Only new connections need the forward.
+
+**Not tested:**
+
+- **Pulling the cable.** That needs a hand on the hardware. Killing the app exercises the same host
+  path for a connection that closes; it does not exercise a connection that goes silent without
+  closing, which is what the 5 s keepalive timeout is for. That timeout has no test of its own and
+  has never fired against a device.
+- **Rotation**, and any surface change other than Home and back.
+- **A second device**, or `--device`.
+- **A malformed or hostile peer against the running apps.** Bad prefaces, oversized lengths, deep
+  JSON, truncated streams and wrongly typed fields are covered by unit tests on both sides, and an
+  oversized frame, a peer that is not an ExtendSpace client and a version mismatch by a loopback
+  test client on Windows. None was sent to the tablet.
+- **The host's drop path.** The send queue never filled, so "drop to the next keyframe and force
+  one" ran only in unit tests.
+
+### Build and test results
+
+| Command | Result |
+| --- | --- |
+| `dotnet build ExtendSpace.slnx` (in `apps/windows`) | Succeeded, 0 warnings, 0 errors |
+| `dotnet test --solution ExtendSpace.slnx` | 299 passed, 0 failed (24 for the app's core, 275 for the experiment; 172 before this step) |
+| `.\gradlew.bat assembleDebug testDebugUnitTest lintDebug` (in `apps/android`) | Succeeded. 82 unit tests passed (41 before this step). Lint: 0 errors, 1 warning, the same Gradle-version notice as before |
+| `.\gradlew.bat assembleRelease` | Succeeded; neither debug screen is in the release APK (checked as described above) |
+| `adb install -r app-debug.apk` | Succeeded |
+
+What the new tests cover, and what they do not:
+
+- **Framing**, on both sides: every split of a byte stream, each limit at and one past its edge, a
+  bad preface, an unknown channel skipped, and three byte-exact examples (a `hello`, a `ping`, a
+  video frame) that both test suites decode, so the two implementations are held to the same bytes.
+- **Control messages**: round trips, missing and unknown fields, JSON nested too deep.
+- **Sending**: the send queue's drop-and-wait-for-keyframe rule, sequence numbering, parameter-set
+  tracking.
+- **Timing**: the clock estimate, backoff, the keyframe limiter, and the new pacer.
+- **The host session**, against a fake client on a loopback socket inside the test: the handshake,
+  a version mismatch, a client with no decoder large enough, nothing listening, a peer that accepts
+  and closes as `adb` does, a client that sends `bye`, and a client that disappears and comes back.
+- **On Android**: the gate that decides what to decode, the request limiter and the latency
+  arithmetic.
+- No test captures a screen, runs an encoder, or touches `MediaCodec` or a `LocalServerSocket`.
+  Those were exercised only by the runs above.
+
+### Problems found along the way
+
+All fixed, and listed because each says something about the design:
+
+| Problem | Cause | Fix |
+| --- | --- | --- |
+| The host crashed when nothing was listening | A refused connection surfaced as an `AggregateException` from a timed wait and was not among the exceptions treated as "not connected". | Unwrapped; a refused connection is now an ordinary failed attempt. Covered by a test. |
+| 1080p60 delivered well under 60 fps from a 60 fps source | The pacer, as described under [Changes to capture pacing](#changes-to-capture-pacing). | Token bucket. |
+| The first 17 frames of every 1080p60 connection were thrown away | The client's backlog limit of 4 was reached while the decoder was still starting, so it discarded the opening keyframe and asked for another. | A larger allowance (30) until the decoder returns its first picture. |
+| A "displayed" latency that was not one | The frame-rendered callback, as described under [Latency](#latency). | Not reported. |
+| "Closed in the middle of a message" when no app was listening | `adb` accepts the TCP connection and then closes it when it finds nobody behind the forward. The host had received nothing, and described that as an interrupted message. | The message now says what it means: nothing arrived, so no app is listening. |
+| Client totals short of the host's at the end of a run | The client's last `stats` could be up to a second old when the session ended. | The client sends a final `stats` before its own `bye`, and the host waits for the client's count to catch up before sending its own. |
+
+### An observation about capture, unexplained
+
+While setting up, the capture API delivered **no frames at all** from the external monitor while a
+browser showed a full-screen video on it: the tablet showed one stale image. With the video out of
+full screen, capture behaved normally. The cause was not established. Candidates are that the video
+was paused, or that a full-screen video presented on a hardware overlay plane changes nothing the
+capture API reports. If it is the second, it is a real limitation of mirroring full-screen video
+and must be understood before Mirror mode ships. It was not investigated further, because the
+monitor was in use.
+
+Capturing the laptop's own panel (on the Intel adapter) while encoding on the NVIDIA adapter was
+tried briefly and worked: 36 frames in 4 s of an idle screen. That is the cross-adapter case step 2a
+listed as untried; it has now been tried once and not measured.
+
+### Limitations
+
+- One PC, one tablet, one cable, one encoder, one day. Single runs.
+- The source was a test pattern in a window on a machine in use, not a controlled 60 fps signal, and
+  the longest run is 180 s. The success criterion of ten minutes has not been attempted.
+- Latency stops at the tablet's surface and starts at Windows' hand-over. No glass-to-glass figure
+  exists.
+- The picture was judged by eye on screenshots. No frame was compared with its source, so a frame
+  shown twice or shown late would not have been noticed.
+- The host does not choose a configuration from the client's capabilities; the person running it
+  does. There is no bitrate adaptation and no reconfiguration when the source changes size.
+- The Android side is one debug activity. There is no foreground service, so the stream lives only
+  while that screen is in front, and the code is not connected to the app's own connection state
+  machine. On Windows it is a console program, not connected to `ExtendSpace.Core`.
+- The live activity is exported, like the decoder screen, so that `adb` and the launcher can start
+  it. Debug builds only.
+- The control channel is JSON and unauthenticated. Over USB the gate is ADB authorisation plus the
+  peer check; there is no pairing.
+- Tablet battery, temperature and memory were not recorded. Host GPU load was not measured this
+  time.
+- Debug builds on both sides.
+
+### Next step
+
+**Measure what a person would see, with a source that can be trusted, for long enough to matter.**
+
+1. **Glass-to-glass latency with a camera.** A millisecond counter on the PC monitor, the tablet
+   beside it, filmed at a high frame rate. This is the one number still missing, and the 16 to 19 ms
+   measured here is only its middle.
+2. **A controlled source.** A full-screen pattern that presents exactly once per refresh on a
+   monitor nobody else is using, so that "60 fps for ten minutes" can be tested rather than
+   inferred.
+3. **A ten-minute soak** at 1080p60, recording memory on both sides and the tablet's temperature,
+   and the cable pulled by hand during it.
+4. **Find out what happened to full-screen video** under the capture API.
+
+After that the code is worth moving: the framing, the session and the decoder out of the
+experiment and the debug source set, behind the session coordinator on Windows and the connection
+controller on Android, with the host choosing a configuration from the client's capabilities.
+
 ## Prerequisites
 
 | Prerequisite | State on the development machine |
@@ -745,38 +1222,46 @@ timestamps instead of all at once.
 | A way to call Media Foundation and Direct3D 11 from C# | Decided for the experiment: CsWin32. Revisit before it goes into the host. |
 | `ffmpeg` / `ffprobe`, to validate streams | Installed (build 2026-01-26), on `PATH`. |
 | `adb` | Installed (platform-tools 37.0.1) but not on `PATH`; found through `ANDROID_HOME`. |
-| A physical Android device with USB debugging enabled by its owner | Connected for step 2a: a Xiaomi Pad 7 (`2410CRP4CI`), Android 16. On HyperOS, *Developer options → Install via USB* must also be on or `adb install` is refused. The emulator has not been used. |
+| A physical Android device with USB debugging enabled by its owner | Connected for steps 2a and 3: a Xiaomi Pad 7 (`2410CRP4CI`), Android 16. On HyperOS, *Developer options → Install via USB* must also be on or `adb install` is refused. The emulator has not been used. |
 | Android app builds | Yes. |
 
 ## What counts as success
 
-For the whole experiment. Step 1 alone meets none of these; they need steps 2 and 3.
+For the whole experiment. Where each stands after step 3:
 
 - The Android screen shows the live Windows desktop, recognisably and continuously, for ten minutes
   without a crash, a freeze or unbounded memory growth on either side.
+  **Not met.** Three minutes at 1080p and two at 720p, without a crash or a lost frame. Ten minutes
+  was not attempted, and memory on the tablet was not measured.
 - Unplugging the cable ends both sides cleanly; replugging and restarting works without restarting
   the apps.
+  **Not tested as written.** The app being killed and restarted was: the host reconnected by itself
+  and the stream resumed. The cable was not pulled.
 - Rotating the device or backgrounding the app and returning recovers the picture (keyframe request
   after the surface is recreated).
+  **Met for backgrounding**, with the `surface_recreated` keyframe request seen in the host's log.
+  Rotation was not tried.
 - The run records which encoder and decoder were actually used. Until that line says "hardware",
   nothing may be described as hardware-accelerated.
+  **Met.** Every report names both; in the sustained runs both were hardware.
 
 No numeric target is set before the first measurement; the experiment produces the baseline that
 later targets are set against.
 
 ## Measurements
 
-| Metric | How | Step 1 |
-| --- | --- | --- |
-| Resolution | Reported by the capture item and confirmed by the decoder's output format. | Measured; confirmed by ffprobe, and in step 2a by the tablet decoder's output format. |
-| Capture frame rate | Count of frames delivered by the frame pool per second. | Measured, as an average over the run. |
-| Encoded frame rate and bitrate | Count and bytes of access units leaving the encoder per second. | Measured, as averages over the run. |
-| Encode time | QPC time from texture submitted to sample received. | Measured ("encoder turnaround"). |
-| Dropped frames (host) | Frames skipped because the send queue was full. | There is no send queue yet. Frames dropped ahead of the encoder are counted. |
-| Dropped frames (client) | Gaps in `sequence`, plus decoder outputs discarded. | Not applicable. |
-| Decode time | Time from `queueInputBuffer` to the matching output buffer. | Not applicable. Step 2a counted frames over elapsed time; it did not time individual frames. |
-| Transport round trip | `ping`/`pong`. | Not applicable. |
-| **Glass-to-glass latency** | Display a running millisecond counter on the Windows monitor, photograph or film the monitor and the phone together with a high-frame-rate camera, and subtract. This is the only measurement that includes capture, display scan-out and panel delay, and the only one to quote. | Not measurable until step 3. |
+| Metric | How | Step 1 | Step 3 |
+| --- | --- | --- | --- |
+| Resolution | Reported by the capture item and confirmed by the decoder's output format. | Measured; confirmed by ffprobe, and in step 2a by the tablet decoder's output format. | Measured on the host; the client parses it from the SPS. |
+| Capture frame rate | Count of frames delivered by the frame pool per second. | Measured, as an average over the run. | Measured, per second and over the run. |
+| Encoded frame rate and bitrate | Count and bytes of access units leaving the encoder per second. | Measured, as averages over the run. | Measured, per second and over the run, as transmitted. |
+| Encode time | QPC time from texture submitted to sample received. | Measured ("encoder turnaround"). | Measured, and also from the capture hand-over. |
+| Dropped frames (host) | Frames skipped because the send queue was full. | There is no send queue yet. Frames dropped ahead of the encoder are counted. | Counted by cause. Zero in every run. |
+| Dropped frames (client) | Gaps in `sequence`, plus decoder outputs discarded. | Not applicable. | Gaps counted, and frames discarded before the decoder. Decoder outputs are never discarded. |
+| Decode time | Time from `queueInputBuffer` to the matching output buffer. | Not applicable. Step 2a counted frames over elapsed time; it did not time individual frames. | **Not measured on its own.** Receive → release (about 11 to 14 ms) contains it. |
+| Transport round trip | `ping`/`pong`. | Not applicable. | Measured: best 2.2 to 4.5 ms. |
+| Capture → released to the tablet's surface | Host timestamp in each frame, clocks related by `ping`/`pong`. Added in step 3. | Not applicable. | Measured: mean 15.7 ms at 720p30, 19.0 ms at 1080p60, ± half a round trip. |
+| **Glass-to-glass latency** | Display a running millisecond counter on the Windows monitor, photograph or film the monitor and the phone together with a high-frame-rate camera, and subtract. This is the only measurement that includes capture, display scan-out and panel delay, and the only one to quote. | Not measurable until step 3. | **Not measured.** No camera was used. |
 
 Per-stage timings locate a problem; only the camera measurement says how the product feels.
 
@@ -798,19 +1283,32 @@ Only "how do I get a connected, authenticated byte stream" may know that ADB exi
    border, from an unpackaged app, on Windows 11?
    **Partly answered.** From an unpackaged console app it delivered frames at the panel's full
    refresh interval (6.06 ms) when allowed to, and Windows granted the borderless request. That the
-   border is really gone has not been confirmed by eye.
+   border is really gone has not been confirmed by eye. Step 3 adds two cautions: the capture API's
+   own rate limit rounds to whole refreshes, so the experiment now paces frames itself, and capture
+   delivered nothing during one full-screen video (unexplained; see
+   [step 3](#an-observation-about-capture-unexplained)).
 2. Which interop approach to Media Foundation is workable from C#?
    **Answered for the experiment:** CsWin32; see [Interop findings](#interop-findings).
 3. What is the baseline glass-to-glass latency over ADB, and which stage dominates it?
-   Open. The one stage measured so far is the encoder, at about 11 ms per frame on this machine.
+   **Half answered.** Glass to glass is still unmeasured. From Windows handing over a frame to the
+   tablet releasing the decoded picture took a mean of 15.7 ms at 720p30 and 19.0 ms at 1080p60,
+   and of that the tablet's receive-to-release stage was the largest part (11 to 14 ms), against
+   1.4 to 2.2 ms to encode and about 3 ms in transit. The stages outside that interval, the two
+   displays above all, may well be larger than everything inside it.
 4. Is one TCP stream over ADB adequate at the bitrates needed, or does throughput cap quality?
-   Open. For scale: the captures here averaged 0.6 to 10.7 Mbit/s against a 12 Mbit/s target.
+   **Adequate at what was tried.** Up to 11.6 Mbit/s on average, with seconds of 20 to 29 Mbit/s,
+   crossed in about 3 ms with the send queue never deeper than one frame. Higher bitrates, larger
+   pictures and a busier USB bus were not tried.
 5. How do common Android hardware decoders behave with a long-GOP, no-B-frame stream and
    low-latency mode?
    **One data point.** A Qualcomm SM7675 tablet's hardware decoder decoded every picture of five
    such files (keyframes every 120 pictures, no B-frames) at up to 2560 × 1600, and so did its
-   separate low-latency decoder at 1920 × 1080. What low-latency mode does to latency is still open,
-   as is every other device.
+   separate low-latency decoder at 1920 × 1080. Live, in step 3, the same decoder took a 2 s
+   keyframe interval with forced keyframes at every (re)connection and after a surface change
+   without an error; its first frames took up to about 140 ms from capture to release while it
+   started. The
+   low-latency decoder's mean was about 2 ms lower in one 30 s run, which is within the noise of
+   that comparison. Every other device is still open.
 
 ## Known product-level concern, out of scope here
 

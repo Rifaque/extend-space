@@ -45,4 +45,7 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     testImplementation(libs.junit)
+    // android.jar only stubs org.json for unit tests. This is the real thing, for tests only; on a
+    // device the platform's own org.json is used and nothing is added to the app.
+    testImplementation(libs.org.json)
 }

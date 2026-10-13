@@ -1,8 +1,11 @@
 # Capture → H.264 experiment
 
-Step 1 of [streaming experiment 01](../../../../docs/architecture/streaming-experiment-01.md#step-1--capture-and-encode-to-a-file):
-capture a real Windows display, encode it with a Media Foundation H.264 encoder, and write a raw
-`.h264` elementary stream. It is a standalone console program; the ExtendSpace app does not use it.
+The Windows side of [streaming experiment 01](../../../../docs/architecture/streaming-experiment-01.md):
+capture a real Windows display, encode it with a Media Foundation H.264 encoder, and either write a
+raw `.h264` elementary stream ([step 1](../../../../docs/architecture/streaming-experiment-01.md#step-1--capture-and-encode-to-a-file))
+or send it live to the Android debug build over USB
+([step 3](../../../../docs/architecture/streaming-experiment-01.md#step-3--live-stream-over-adb-forward)).
+It is a standalone console program; the ExtendSpace app does not use it.
 
 ```powershell
 cd apps/windows
@@ -13,6 +16,17 @@ dotnet run --project experiments/ExtendSpace.Experiments.CaptureEncode -- --help
 ```
 
 The output file is a recording of your screen. `*.h264` is git-ignored; keep it that way.
+
+To stream live, connect the device with USB debugging on, open "ExtendSpace live test" on it (a
+debug build of the Android app), then:
+
+```powershell
+dotnet run --project experiments/ExtendSpace.Experiments.CaptureEncode -- stream --output-size 1920x1080 --fps 60 --duration 60
+```
+
+The program runs `adb forward tcp:27183 localabstract:extendspace`, connects to that loopback port,
+and removes the forward when it stops. It opens no listening socket of its own. `adb` is found
+through `ANDROID_HOME` or `PATH`, or given with `--adb`.
 
 To check a file with ffmpeg, if you have it:
 

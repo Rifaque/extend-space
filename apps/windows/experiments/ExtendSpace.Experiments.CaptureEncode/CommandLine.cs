@@ -64,14 +64,37 @@ internal sealed record CaptureOptions
     public TimeSpan FrameInterval => TimeSpan.FromTicks(TimeSpan.TicksPerSecond / FrameRate);
 }
 
+/// <summary>What the stream command needs beyond the capture options.</summary>
+internal sealed record StreamOptions
+{
+    /// <summary>The loopback TCP port adb forwards to the Android app.</summary>
+    public int Port { get; init; } = Streaming.Protocol.DefaultHostPort;
+
+    /// <summary>The adb serial of the device, for when more than one is attached.</summary>
+    public string? DeviceSerial { get; init; }
+
+    /// <summary>Where adb.exe is; null finds it through ANDROID_HOME or PATH.</summary>
+    public string? AdbPath { get; init; }
+
+    /// <summary>False leaves the port forward to the user (--no-adb-forward).</summary>
+    public bool ManageAdbForward { get; init; } = true;
+
+    /// <summary>How long to keep trying to open, or re-open, the connection before giving up.</summary>
+    public TimeSpan ReconnectBudget { get; init; } = Streaming.ReconnectBackoff.DefaultBudget;
+}
+
 internal enum CommandKind
 {
     Capture,
+    Stream,
     List,
     Help,
 }
 
-internal sealed record ParsedCommand(CommandKind Kind, CaptureOptions Options);
+internal sealed record ParsedCommand(CommandKind Kind, CaptureOptions Options)
+{
+    public StreamOptions Stream { get; init; } = new();
+}
 
 internal sealed class UsageException(string message) : Exception(message);
 
@@ -85,11 +108,14 @@ internal static class CommandLine
 
         Usage:
           ExtendSpace.CaptureEncode [capture] [options]
+          ExtendSpace.CaptureEncode stream [options]
           ExtendSpace.CaptureEncode list
           ExtendSpace.CaptureEncode --help
 
         Commands:
-          capture             Run the experiment (default).
+          capture             Capture to a .h264 file (default).
+          stream              Capture and send live to the ExtendSpace Android app over USB, through
+                              an adb port forward. Open the app's live screen on the device first.
           list                Print the monitors, the graphics adapter and the H.264 encoders found.
 
         Options:
@@ -111,6 +137,15 @@ internal static class CommandLine
           --default-timer           Leave the Windows timer resolution alone instead of requesting 1 ms
                                     for this process. For comparison; expect a slower hardware encoder.
 
+        Options for 'stream' only (it takes the options above too, except --output and --max-frames;
+        --duration counts from the moment the stream starts):
+          --port <number>           Loopback TCP port to forward and connect to. Default: 27183.
+          --device <serial>         adb serial of the device, when more than one is attached.
+          --adb <path>              adb.exe to use. Default: found through ANDROID_HOME, then PATH.
+          --no-adb-forward          Do not run 'adb forward'; the port is already forwarded.
+          --reconnect-seconds <n>   Give up if the connection cannot be opened, or re-opened after a
+                                    loss, within this many seconds, 1 to 600. Default: 30.
+
         Ctrl+C or Ctrl+Break stops the capture early; the stream is still drained and the file finalised.
         Exit codes: 0 success, 1 the run failed, 2 invalid arguments.
         """;
@@ -119,6 +154,7 @@ internal static class CommandLine
     {
         CommandKind kind = CommandKind.Capture;
         var options = new CaptureOptions();
+        var stream = new StreamOptions();
         int index = 0;
 
         if (args.Count > 0 && !args[0].StartsWith('-'))
@@ -126,6 +162,7 @@ internal static class CommandLine
             kind = args[0].ToLowerInvariant() switch
             {
                 "capture" => CommandKind.Capture,
+                "stream" => CommandKind.Stream,
                 "list" => CommandKind.List,
                 "help" => CommandKind.Help,
                 _ => throw new UsageException($"Unknown command '{args[0]}'."),
@@ -177,6 +214,21 @@ internal static class CommandLine
                 case "--no-cursor":
                     options = options with { CaptureCursor = false };
                     break;
+                case "--port":
+                    stream = stream with { Port = ParseInt(name, Value(), 1024, 65535) };
+                    break;
+                case "--device":
+                    stream = stream with { DeviceSerial = ParseSerial(name, Value()) };
+                    break;
+                case "--adb":
+                    stream = stream with { AdbPath = Value() };
+                    break;
+                case "--no-adb-forward":
+                    stream = stream with { ManageAdbForward = false };
+                    break;
+                case "--reconnect-seconds":
+                    stream = stream with { ReconnectBudget = TimeSpan.FromSeconds(ParseInt(name, Value(), 1, 600)) };
+                    break;
                 case "--no-border":
                     options = options with { RequestBorderless = true };
                     break;
@@ -188,7 +240,28 @@ internal static class CommandLine
             }
         }
 
-        return new ParsedCommand(kind, options);
+        if (kind == CommandKind.Stream && (options.OutputPath is not null || options.MaxFrames is not null))
+        {
+            throw new UsageException("'stream' sends video to the device; it takes neither --output nor --max-frames.");
+        }
+
+        if (kind != CommandKind.Stream && stream != new StreamOptions())
+        {
+            throw new UsageException("--port, --device, --adb, --no-adb-forward and --reconnect-seconds only apply to 'stream'.");
+        }
+
+        return new ParsedCommand(kind, options) { Stream = stream };
+    }
+
+    /// <summary>An adb serial goes onto a command line, so it is held to the characters serials are made of.</summary>
+    private static string ParseSerial(string name, string text)
+    {
+        if (text.Length is 0 or > 128 || !text.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or ':' or '-' or '_'))
+        {
+            throw new UsageException($"Option '{name}': '{text}' does not look like an adb device serial.");
+        }
+
+        return text;
     }
 
     /// <summary>Accepts plain bit/s or a decimal with a k (thousand) or M (million) suffix.</summary>

@@ -63,6 +63,7 @@ public class CommandLineTests
 
     [Theory]
     [InlineData("capture", nameof(CommandKind.Capture))]
+    [InlineData("stream", nameof(CommandKind.Stream))]
     [InlineData("list", nameof(CommandKind.List))]
     [InlineData("help", nameof(CommandKind.Help))]
     [InlineData("--help", nameof(CommandKind.Help))]
@@ -150,6 +151,79 @@ public class CommandLineTests
     }
 
     [Fact]
+    public void Stream_takes_the_capture_options_and_its_own()
+    {
+        ParsedCommand command = CommandLine.Parse(
+        [
+            "stream",
+            "--output-size", "1280x720",
+            "--fps", "30",
+            "--bitrate", "6M",
+            "--duration", "120",
+            "--port", "30000",
+            "--device", "852ec620",
+            "--adb", @"C:\sdk\platform-toolsdb.exe",
+            "--no-adb-forward",
+            "--reconnect-seconds", "5",
+        ]);
+
+        Assert.Equal(CommandKind.Stream, command.Kind);
+        Assert.Equal((1280, 720), command.Options.OutputSize);
+        Assert.Equal(30, command.Options.FrameRate);
+        Assert.Equal(TimeSpan.FromSeconds(120), command.Options.Duration);
+        Assert.Equal(30000, command.Stream.Port);
+        Assert.Equal("852ec620", command.Stream.DeviceSerial);
+        Assert.Equal(@"C:\sdk\platform-toolsdb.exe", command.Stream.AdbPath);
+        Assert.False(command.Stream.ManageAdbForward);
+        Assert.Equal(TimeSpan.FromSeconds(5), command.Stream.ReconnectBudget);
+    }
+
+    [Fact]
+    public void Stream_defaults_to_the_documented_port_and_sets_the_forward_up_itself()
+    {
+        StreamOptions stream = CommandLine.Parse(["stream"]).Stream;
+
+        Assert.Equal(27183, stream.Port);
+        Assert.Null(stream.DeviceSerial);
+        Assert.Null(stream.AdbPath);
+        Assert.True(stream.ManageAdbForward);
+        Assert.Equal(TimeSpan.FromSeconds(30), stream.ReconnectBudget);
+    }
+
+    [Theory]
+    [InlineData("--port", "80")]
+    [InlineData("--port", "70000")]
+    [InlineData("--port", "http")]
+    [InlineData("--reconnect-seconds", "0")]
+    [InlineData("--device", "")]
+    [InlineData("--device", "abc; rm -rf")]
+    [InlineData("--device", "two words")]
+    [InlineData("--device", "quote\"d")]
+    [InlineData("--output", "clip.h264")]
+    [InlineData("--max-frames", "10")]
+    public void Invalid_stream_arguments_are_usage_errors(string option, string value)
+    {
+        Assert.Throws<UsageException>(() => CommandLine.Parse(["stream", option, value]));
+    }
+
+    [Theory]
+    [InlineData("--port", "30000")]
+    [InlineData("--device", "852ec620")]
+    [InlineData("--reconnect-seconds", "5")]
+    public void Stream_options_are_refused_by_the_other_commands(string option, string value)
+    {
+        Assert.Throws<UsageException>(() => CommandLine.Parse(["capture", option, value]));
+        Assert.Throws<UsageException>(() => CommandLine.Parse([option, value]));
+    }
+
+    [Fact]
+    public void An_emulator_style_serial_is_accepted()
+    {
+        Assert.Equal("emulator-5554", CommandLine.Parse(["stream", "--device", "emulator-5554"]).Stream.DeviceSerial);
+        Assert.Equal("192.168.1.20:5555", CommandLine.Parse(["stream", "--device", "192.168.1.20:5555"]).Stream.DeviceSerial);
+    }
+
+    [Fact]
     public void The_keyframe_interval_is_never_shorter_than_one_frame()
     {
         CaptureOptions options = CommandLine.Parse(["--fps", "1", "--gop-seconds", "0.1"]).Options;
@@ -163,6 +237,7 @@ public class CommandLineTests
         [
             "--monitor", "--duration", "--max-frames", "--fps", "--output-size", "--bitrate", "--gop-seconds",
             "--profile", "--encoder", "--output", "--no-cursor", "--no-border", "--default-timer",
+            "--port", "--device", "--adb", "--no-adb-forward", "--reconnect-seconds",
         ];
 
         Assert.All(options, option => Assert.Contains(option, CommandLine.HelpText));

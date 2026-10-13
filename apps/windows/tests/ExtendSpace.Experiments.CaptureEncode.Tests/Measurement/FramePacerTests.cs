@@ -62,16 +62,64 @@ public class FramePacerTests
     }
 
     [Fact]
-    public void A_quiet_period_does_not_earn_a_burst_afterwards()
+    public void A_quiet_period_earns_one_extra_frame_afterwards_and_no_more()
     {
         var pacer = new FramePacer(TimeSpan.FromMilliseconds(40));
         Assert.True(pacer.ShouldAccept(TimeSpan.Zero));
 
-        // Nothing for a second, then frames 5 ms apart: only the first is due.
+        // Nothing for a second, then frames 5 ms apart: the one that is due, one spare, then the usual spacing.
         Assert.True(pacer.ShouldAccept(TimeSpan.FromMilliseconds(1000)));
-        Assert.False(pacer.ShouldAccept(TimeSpan.FromMilliseconds(1005)));
+        Assert.True(pacer.ShouldAccept(TimeSpan.FromMilliseconds(1005)));
         Assert.False(pacer.ShouldAccept(TimeSpan.FromMilliseconds(1010)));
+        Assert.False(pacer.ShouldAccept(TimeSpan.FromMilliseconds(1015)));
+        Assert.False(pacer.ShouldAccept(TimeSpan.FromMilliseconds(1030)));
         Assert.True(pacer.ShouldAccept(TimeSpan.FromMilliseconds(1040)));
+
+        // However long the pause, the allowance does not grow.
+        Assert.True(pacer.ShouldAccept(TimeSpan.FromMilliseconds(60_000)));
+        Assert.True(pacer.ShouldAccept(TimeSpan.FromMilliseconds(60_001)));
+        Assert.False(pacer.ShouldAccept(TimeSpan.FromMilliseconds(60_002)));
+    }
+
+    [Theory]
+    [InlineData(new[] { 14, 21 })]
+    [InlineData(new[] { 14, 14, 21 })]
+    [InlineData(new[] { 21, 14, 14, 21, 14 })]
+    [InlineData(new[] { 12, 18, 18 })]
+    public void A_source_near_the_target_rate_that_lands_on_display_refreshes_loses_almost_nothing(int[] spacingMilliseconds)
+    {
+        // 60 fps content shown on a faster display reaches capture early and late by turns. The
+        // source is at or below the target rate, so nearly every frame should go through.
+        var pacer = new FramePacer(SixtyFps);
+        var time = TimeSpan.Zero;
+        int offered = 0;
+        int accepted = 0;
+
+        for (int i = 0; i < 600; i++)
+        {
+            offered++;
+            if (pacer.ShouldAccept(time))
+            {
+                accepted++;
+            }
+
+            time += TimeSpan.FromMilliseconds(spacingMilliseconds[i % spacingMilliseconds.Length]);
+        }
+
+        double offeredRate = offered / time.TotalSeconds;
+        double acceptedRate = accepted / time.TotalSeconds;
+        Assert.True(acceptedRate <= 60.5, $"accepted {acceptedRate:0.0} fps");
+        Assert.True(acceptedRate >= Math.Min(offeredRate, 60) - 1.0, $"offered {offeredRate:0.0} fps, accepted only {acceptedRate:0.0} fps");
+    }
+
+    [Fact]
+    public void Timestamps_that_do_not_advance_earn_nothing()
+    {
+        var pacer = new FramePacer(TimeSpan.FromMilliseconds(40));
+
+        Assert.True(pacer.ShouldAccept(TimeSpan.FromMilliseconds(100)));
+        Assert.False(pacer.ShouldAccept(TimeSpan.FromMilliseconds(100)));
+        Assert.False(pacer.ShouldAccept(TimeSpan.FromMilliseconds(90)));
     }
 
     [Fact]

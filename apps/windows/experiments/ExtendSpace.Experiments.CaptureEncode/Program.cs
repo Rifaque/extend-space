@@ -2,6 +2,7 @@ using System.Text;
 using ExtendSpace.Experiments.CaptureEncode.Capture;
 using ExtendSpace.Experiments.CaptureEncode.Encoding;
 using ExtendSpace.Experiments.CaptureEncode.Graphics;
+using ExtendSpace.Experiments.CaptureEncode.Streaming;
 
 namespace ExtendSpace.Experiments.CaptureEncode;
 
@@ -37,6 +38,8 @@ internal static class Program
                 return ExitSuccess;
             case CommandKind.List:
                 return List();
+            case CommandKind.Stream:
+                return Stream(command.Options, command.Stream);
             default:
                 return Capture(command.Options);
         }
@@ -79,6 +82,34 @@ internal static class Program
         try
         {
             report = new ExperimentRunner(options, Console.Out).Run(cancellation.Token);
+        }
+        finally
+        {
+            Console.CancelKeyPress -= OnCancelKey;
+        }
+
+        report.Write(Console.Out);
+        return report.Succeeded ? ExitSuccess : ExitFailed;
+    }
+
+    private static int Stream(CaptureOptions options, StreamOptions stream)
+    {
+        using var cancellation = new CancellationTokenSource();
+        void OnCancelKey(object? sender, ConsoleCancelEventArgs e)
+        {
+            // As for a capture: the first Ctrl+C ends the session in an orderly way.
+            if (!cancellation.IsCancellationRequested)
+            {
+                e.Cancel = true;
+                cancellation.Cancel();
+            }
+        }
+
+        Console.CancelKeyPress += OnCancelKey;
+        StreamReport report;
+        try
+        {
+            report = new StreamRunner(options, stream, Console.Out).Run(cancellation.Token);
         }
         finally
         {

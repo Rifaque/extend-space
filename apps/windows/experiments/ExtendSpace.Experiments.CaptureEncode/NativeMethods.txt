@@ -106,6 +106,7 @@ CODECAPI_AVEncCommonRateControlMode
 CODECAPI_AVEncCommonMeanBitRate
 CODECAPI_AVEncMPVGOPSize
 CODECAPI_AVEncMPVDefaultBPictureCount
+CODECAPI_AVEncVideoForceKeyFrame
 
 // Timer resolution
 timeBeginPeriod

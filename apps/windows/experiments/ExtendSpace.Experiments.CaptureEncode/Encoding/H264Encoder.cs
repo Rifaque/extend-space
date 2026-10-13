@@ -183,6 +183,22 @@ internal sealed class H264Encoder : IDisposable
     }
 
     /// <summary>
+    /// Asks for the next encoded picture to be a keyframe (an IDR picture). Returns false if the
+    /// encoder has no such control or refuses; the stream then waits for its next periodic keyframe.
+    /// </summary>
+    public bool RequestKeyframe()
+    {
+        if (_transform is not ICodecAPI codec)
+        {
+            return false;
+        }
+
+        Guid property = typeof(CODECAPI_AVEncVideoForceKeyFrame).GUID;
+        object value = 1u;
+        return codec.SetValue(in property, in value).Succeeded;
+    }
+
+    /// <summary>
     /// The SPS and PPS as the encoder publishes them on its output type, or null if it publishes
     /// none. Needed only if the stream itself turns out not to start with them.
     /// </summary>

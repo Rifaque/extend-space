@@ -22,17 +22,21 @@ The project aims to support both screen mirroring and true extended-display func
 
 The initial development focus is establishing the streaming pipeline and validating Windows virtual-display integration. Features listed above are planned and should not be interpreted as already implemented.
 
-**Nothing connects, mirrors or extends yet.** What exists today:
+**The apps themselves do not connect, mirror or extend yet.** A live picture has been streamed from
+Windows to an Android tablet over USB, but only by a standalone experiment and a debug-only screen.
+What exists today:
 
 | Area | State |
 | --- | --- |
 | Windows host app shell (WinUI 3): navigation, Connect screen, diagnostics | Implemented |
 | Android companion app shell (Jetpack Compose): Connect and About screens | Implemented |
 | Session state model on both platforms, with unit tests | Implemented |
-| Protocol | Draft specification only |
-| USB transport, Wi-Fi transport, pairing | Not implemented |
-| Display capture and H.264 encoding | Proven in a standalone experiment that writes a `.h264` file; not part of the app |
-| Video decoding on Android | Proven on one tablet by a debug-only screen that plays a captured `.h264` file; not part of the app |
+| Protocol | Draft specification; framing, handshake, video, keepalive and reconnection implemented in the experiment only |
+| USB transport | Proven in the experiment through `adb forward`, on one PC and one tablet; not part of the app |
+| Wi-Fi transport, pairing | Not implemented |
+| Display capture and H.264 encoding | Proven in a standalone experiment that writes a `.h264` file or streams live; not part of the app |
+| Video decoding on Android | Proven on one tablet by debug-only screens that play a captured file or a live stream; not part of the app |
+| Live mirroring, end to end | Shown by the experiment for up to three minutes at a time. Latency measured as far as the tablet's display surface, not glass to glass. See [experiment 01](docs/architecture/streaming-experiment-01.md#step-3--live-stream-over-adb-forward) |
 | Virtual display driver (Extend mode) | Not implemented; feasibility researched |
 
 Both apps say so in their own UI: the Connect button on Windows is disabled, with the reason shown.

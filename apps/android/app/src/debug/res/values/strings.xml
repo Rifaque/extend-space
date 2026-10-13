@@ -37,4 +37,27 @@
 
     <string name="decoder_test_section_capabilities">What this device reports</string>
     <string name="decoder_test_capabilities_note">From MediaCodecList. These are the device\'s own claims, not test results.</string>
+
+    <!-- Debug builds only: the live-stream test screen. -->
+    <string name="live_launcher_label">ExtendSpace live test</string>
+    <string name="live_title">Live stream over USB</string>
+    <string name="live_subtitle">Debug build only. Shows video sent by the ExtendSpace Windows experiment through adb forward. The app listens on a local socket; nothing is opened on the network.</string>
+    <string name="live_listen">Listen</string>
+    <string name="live_stop">Stop</string>
+    <string name="live_value_none">—</string>
+    <string name="live_row_state">State</string>
+    <string name="live_row_problem">Latest problem</string>
+    <string name="live_row_host">Host</string>
+    <string name="live_row_stream">Stream announced</string>
+    <string name="live_row_picture">Picture</string>
+    <string name="live_row_decoder">Decoder</string>
+    <string name="live_row_rates">Last second</string>
+    <string name="live_row_frames">Frames</string>
+    <string name="live_row_drops">Losses</string>
+    <string name="live_row_latency_receive">Capture to received</string>
+    <string name="live_row_latency_render">Capture to released to the surface</string>
+    <string name="live_row_clock">Clock relation</string>
+    <string name="live_clock_known">Round trip %1$s ms, so latency figures are good to about %2$s ms either way</string>
+    <string name="live_clock_unknown">Not yet known; latency cannot be worked out until the host has measured it</string>
+    <string name="live_row_connections">Connections</string>
 </resources>

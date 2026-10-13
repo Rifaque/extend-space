@@ -36,9 +36,9 @@ input can act as the user. An attacker who can talk to the driver can add or rem
 | --- | --- | --- |
 | A device on the same Wi-Fi connects and views the screen | Mutual authentication against keys stored at pairing, before any other message | Designed in the [protocol draft](../../protocol/specification/protocol.md#6-device-identity-and-pairing) |
 | An active attacker intercepts pairing | A ceremony that binds both devices' keys to something the user verifies on both screens | Open |
-| Another app on the phone connects to the app's local socket | Accept only peers whose credentials are the ADB shell user | To confirm in experiment 01 |
+| Another app on the phone connects to the app's local socket | Accept only peers whose credentials are the ADB shell user | Implemented in experiment 01's debug-only live screen (shell or root user ID, anything else is closed). Connections from `adb` were accepted; a refusal has not been seen on a device, because no second app tried |
 | Another program on the PC connects to the forwarded loopback port | The port exists only for the life of a session; *Open:* whether to require protocol-level authentication on USB as well | Open |
-| A malicious or buggy peer sends oversized or malformed frames | Length checked against per-channel limits before allocation; strict parsing; fatal error on violation | Designed |
+| A malicious or buggy peer sends oversized or malformed frames | Length checked against per-channel limits before allocation; strict parsing; fatal error on violation | Implemented and unit-tested on both sides in experiment 01; not in the apps, and not attacked on a device |
 | A local unprivileged program drives the display driver | Restrictive security descriptor on the driver's control interface; every IOCTL input validated in the driver | Open; see [IddCx feasibility](../architecture/iddcx-feasibility.md#4-boundary-between-the-driver-and-the-c-host) |
 | The host crashes and leaves a virtual monitor attached | The driver removes monitors itself when its controller disappears | Designed, unproven |
 | Users are asked to trust a self-signed driver certificate | Not acceptable for distribution; self-signed installs are for the developer's own test machine only | Policy |

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using ExtendSpace.Experiments.CaptureEncode.Graphics;
 using ExtendSpace.Experiments.CaptureEncode.Interop;
@@ -43,6 +44,7 @@ internal sealed class MonitorCapture : IDisposable
     private readonly Lock _gate = new();
     private readonly FramePacer _pacer;
     private readonly DurationSeries _deliveryIntervals = new();
+    private readonly DurationSeries _deliveryDelays = new();
     private readonly Action _wake;
 
     private IDirect3DDevice? _device;
@@ -50,6 +52,7 @@ internal sealed class MonitorCapture : IDisposable
     private Direct3D11CaptureFramePool? _framePool;
     private GraphicsCaptureSession? _session;
     private Direct3D11CaptureFrame? _pending;
+    private long _pendingArrival;
     private bool _running;
     private string? _failure;
 
@@ -149,11 +152,15 @@ internal sealed class MonitorCapture : IDisposable
     }
 
     /// <summary>Takes the waiting frame, if any. The caller disposes it as soon as it has been converted.</summary>
-    public bool TryTake(out Direct3D11CaptureFrame? frame)
+    /// <param name="arrival">
+    /// The <see cref="Stopwatch"/> timestamp at which Windows handed the frame to this process.
+    /// </param>
+    public bool TryTake(out Direct3D11CaptureFrame? frame, out long arrival)
     {
         lock (_gate)
         {
             frame = _pending;
+            arrival = _pendingArrival;
             _pending = null;
             return frame is not null;
         }
@@ -166,6 +173,22 @@ internal sealed class MonitorCapture : IDisposable
             lock (_gate)
             {
                 return new(_delivered, _skippedByPacer, _replaced, _discardedAtStop, _firstFrameTime, _lastFrameTime);
+            }
+        }
+    }
+
+    /// <summary>
+    /// From each frame's own timestamp to the moment it was handed to this process, both on the
+    /// performance counter. It says how the timestamp relates to "now": Windows stamps a frame with
+    /// a time that can be slightly ahead of its delivery, so this can be negative.
+    /// </summary>
+    public DurationSummary? DeliveryDelays
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _deliveryDelays.Summarize();
             }
         }
     }
@@ -279,11 +302,16 @@ internal sealed class MonitorCapture : IDisposable
 
     private static string ConfigureRateLimit(GraphicsCaptureSession session, TimeSpan frameInterval)
     {
-        // Lets Windows skip the copies the pacer would throw away. Added in Windows 11 24H2.
+        // Lets Windows skip most of the copies the pacer would throw away. Added in Windows 11 24H2.
+        //
+        // Windows rounds this interval up to whole display refreshes, so asking for the full frame
+        // interval caps the rate below the target (55 fps for 60 on a 165 Hz panel, measured). Half
+        // the frame interval leaves the choosing to the pacer, which holds the average on target.
         if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 26100))
         {
-            session.MinUpdateInterval = frameInterval;
-            return $"GraphicsCaptureSession.MinUpdateInterval = {frameInterval.TotalMilliseconds:F3} ms, then the application pacer";
+            TimeSpan minimum = frameInterval / 2;
+            session.MinUpdateInterval = minimum;
+            return $"GraphicsCaptureSession.MinUpdateInterval = {minimum.TotalMilliseconds:F3} ms (half a frame interval), then the application pacer";
         }
 
         return "application pacer only (GraphicsCaptureSession.MinUpdateInterval is not available on this Windows version)";
@@ -306,8 +334,10 @@ internal sealed class MonitorCapture : IDisposable
                     return;
                 }
 
+                long arrival = Stopwatch.GetTimestamp();
                 _delivered++;
                 TimeSpan time = frame.SystemRelativeTime;
+                _deliveryDelays.Add(Stopwatch.GetElapsedTime(0, arrival) - time);
                 if (_lastFrameTime is { } previous)
                 {
                     _deliveryIntervals.Add(time - previous);
@@ -340,6 +370,7 @@ internal sealed class MonitorCapture : IDisposable
                     }
 
                     _pending = frame;
+                    _pendingArrival = arrival;
                 }
             }
         }

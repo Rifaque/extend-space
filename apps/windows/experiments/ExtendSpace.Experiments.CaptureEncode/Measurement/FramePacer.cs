@@ -3,39 +3,47 @@ namespace ExtendSpace.Experiments.CaptureEncode.Measurement;
 /// <summary>
 /// Decides which captured frames go on to the encoder so that the accepted frames average the
 /// target rate, even when the display refreshes faster or not at a multiple of it. Not thread-safe.
+///
+/// It is a token bucket: one token accrues per frame interval and accepting a frame spends one.
+/// The bucket holds two tokens, so a frame that arrives late does not cost the frame after it.
+/// Without that slack, a source running at about the target rate but landing on display refreshes
+/// (14 ms, 21 ms, 14 ms ... for 60 fps content on a 143 Hz monitor) lost a frame every time one
+/// came early, and delivered well under the target; that was measured. The price is that after a
+/// pause one extra frame may be taken straight away.
 /// </summary>
 internal sealed class FramePacer
 {
+    /// <summary>One spare token: enough to ride out a late frame, and no more than one extra frame after a pause.</summary>
+    private const double Capacity = 2;
+
+    /// <summary>A frame this close to being due is taken now rather than a whole refresh later.</summary>
+    private const double Tolerance = 1.0 / 8;
+
     private readonly TimeSpan _interval;
-    private readonly TimeSpan _tolerance;
-    private TimeSpan? _nextDue;
+    private double _tokens = 1;
+    private TimeSpan? _last;
 
     public FramePacer(TimeSpan interval)
     {
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(interval, TimeSpan.Zero);
         _interval = interval;
-
-        // A frame that is this close to being due is taken now rather than a whole refresh later.
-        _tolerance = interval / 8;
     }
 
     /// <param name="timestamp">The frame's capture time on any monotonic clock.</param>
     public bool ShouldAccept(TimeSpan timestamp)
     {
-        if (_nextDue is not { } due)
+        if (_last is { } last && timestamp > last)
         {
-            _nextDue = timestamp + _interval;
-            return true;
+            _tokens = Math.Min(Capacity, _tokens + ((timestamp - last) / _interval));
         }
 
-        if (timestamp + _tolerance < due)
+        _last = timestamp;
+        if (_tokens + Tolerance < 1)
         {
             return false;
         }
 
-        // Keep the long-run average on target, but never bank a backlog after a quiet period.
-        due += _interval;
-        _nextDue = due <= timestamp ? timestamp + _interval : due;
+        _tokens -= 1;
         return true;
     }
 }
