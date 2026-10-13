@@ -70,7 +70,21 @@ internal sealed record HostSessionOptions(
     TimeSpan ReconnectBudget,
     int SendQueueCapacity,
     string DeviceName,
-    string AppVersion);
+    string AppVersion)
+{
+    /// <summary>How long each step of the handshake may take. The protocol's value unless a test shortens it.</summary>
+    public TimeSpan HandshakeStepTimeout { get; init; } = Protocol.HandshakeStepTimeout;
+
+    /// <summary>How long nothing may arrive from the client before the connection counts as lost.</summary>
+    public TimeSpan KeepaliveTimeout { get; init; } = Protocol.KeepaliveTimeout;
+
+    /// <summary>
+    /// Sets the transport up again before a new connection attempt, after one has failed or been
+    /// lost: over USB the adb port forward, which adb drops whenever the device goes away. Returns
+    /// null when the transport is in place, otherwise what is wrong. Null leaves the transport alone.
+    /// </summary>
+    public Func<string?>? RestoreTransport { get; init; }
+}
 
 /// <summary>
 /// The host's end of one ExtendSpace session over a loopback TCP port that adb forwards to the
@@ -85,6 +99,9 @@ internal sealed class HostSession : IDisposable
 {
     private static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan WriterIdleWait = TimeSpan.FromMilliseconds(20);
+
+    /// <summary>Several idle waits: a writer that has not stopped by then is blocked inside a write.</summary>
+    private static readonly TimeSpan WriterExitWait = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan FastPingInterval = TimeSpan.FromMilliseconds(100);
     private const int FastPings = 5;
 
@@ -126,6 +143,8 @@ internal sealed class HostSession : IDisposable
     private long _connectionsEstablished;
     private long _connectionsLost;
     private long _transmittedThisConnection;
+    private long _lastReceivedMicros;
+    private long _lastVideoWrittenMicros;
 
     private ClientStatsSample? _latestSample;
     private ClientStatsSample? _previousSample;
@@ -252,10 +271,16 @@ internal sealed class HostSession : IDisposable
         ConnectionsLost = Interlocked.Read(ref _connectionsLost),
     };
 
+    /// <exception cref="InvalidOperationException">The session was already started. One session, one connection at a time.</exception>
     public void Start()
     {
-        _thread = new Thread(Run) { IsBackground = true, Name = "ExtendSpace host session" };
-        _thread.Start();
+        var thread = new Thread(Run) { IsBackground = true, Name = "ExtendSpace host session" };
+        if (Interlocked.CompareExchange(ref _thread, thread, null) is not null)
+        {
+            throw new InvalidOperationException("This session has already been started; it cannot be started twice.");
+        }
+
+        thread.Start();
     }
 
     /// <summary>
@@ -356,6 +381,7 @@ internal sealed class HostSession : IDisposable
         var backoff = new ReconnectBackoff(_options.ReconnectBudget);
         long waitingSince = HostClock.NowMicros;
         bool everStreamed = false;
+        bool firstAttempt = true;
         string? lastProblem = null;
 
         while (!_stop.IsCancellationRequested)
@@ -364,7 +390,17 @@ internal sealed class HostSession : IDisposable
             SessionEnd end;
             try
             {
-                end = RunConnection();
+                // Whoever started the session set the transport up for the first attempt. After
+                // that it cannot be taken for granted: adb drops its forward when the device goes.
+                string? transportProblem = firstAttempt ? null : RestoreTransport();
+                firstAttempt = false;
+                end = transportProblem is null
+                    ? RunConnection()
+                    : SessionEnd.Lost($"the transport could not be set up: {transportProblem}");
+            }
+            catch (OperationCanceledException)
+            {
+                end = SessionEnd.Lost("stopped");
             }
             catch (Exception exception) when (exception is SocketException or IOException or TimeoutException or ObjectDisposedException)
             {
@@ -405,7 +441,7 @@ internal sealed class HostSession : IDisposable
             if (end.WasStreaming)
             {
                 Interlocked.Increment(ref _connectionsLost);
-                _log($"connection lost: {end.Detail}");
+                _log($"connection lost: {end.Detail}{end.Timing}");
             }
             else if (end.Detail != lastProblem)
             {
@@ -435,7 +471,7 @@ internal sealed class HostSession : IDisposable
         using var client = new TcpClient(AddressFamily.InterNetwork) { NoDelay = true };
         try
         {
-            if (!client.ConnectAsync(IPAddress.Loopback, _options.Port).Wait(ConnectTimeout))
+            if (!client.ConnectAsync(IPAddress.Loopback, _options.Port).Wait((int)ConnectTimeout.TotalMilliseconds, _stop.Token))
             {
                 return SessionEnd.Lost($"connecting to 127.0.0.1:{_options.Port} timed out");
             }
@@ -451,13 +487,25 @@ internal sealed class HostSession : IDisposable
         var reader = new ConnectionReader(client.Client);
 
         SetPhase(SessionPhase.Negotiating);
-        stream.WriteTimeout = (int)Protocol.HandshakeStepTimeout.TotalMilliseconds;
+        stream.WriteTimeout = (int)_options.HandshakeStepTimeout.TotalMilliseconds;
         stream.Write(Protocol.Preface);
         stream.Write(ControlCodec.Encode(new Hello(Protocol.MajorVersion, Protocol.MajorVersion, "host", _options.DeviceName, _options.AppVersion)));
 
         // adb accepts the TCP connection whether or not the app is listening behind it. Only the
         // client's own preface and hello prove there is an ExtendSpace client on the other end.
-        Hello hello = reader.Expect<Hello>(Protocol.HandshakeStepTimeout);
+        Hello hello;
+        try
+        {
+            hello = reader.Expect<Hello>(_options.HandshakeStepTimeout, _stop.Token);
+        }
+        catch (TimeoutException)
+        {
+            // Measured on a device: this is what a second host sees while the app is busy with a
+            // first. The app serves one connection at a time and leaves the next one waiting.
+            return SessionEnd.Lost(
+                $"nothing answered within {_options.HandshakeStepTimeout.TotalSeconds:0.#} s of connecting; the app serves one host at a time, so another stream may already be connected to it");
+        }
+
         if (hello.ProtocolMin > Protocol.MajorVersion || hello.ProtocolMax < Protocol.MajorVersion)
         {
             string problem = $"the client speaks protocol versions {hello.ProtocolMin} to {hello.ProtocolMax}; this host speaks {Protocol.MajorVersion}";
@@ -465,7 +513,7 @@ internal sealed class HostSession : IDisposable
             return SessionEnd.Fatal(problem);
         }
 
-        ClientCapabilities capabilities = reader.Expect<ClientCapabilities>(Protocol.HandshakeStepTimeout);
+        ClientCapabilities capabilities = reader.Expect<ClientCapabilities>(_options.HandshakeStepTimeout, _stop.Token);
         StreamConfig config = _streamConfig();
         if (!capabilities.Decoders.Any(decoder => decoder.MaxWidth >= config.Width && decoder.MaxHeight >= config.Height))
         {
@@ -475,7 +523,7 @@ internal sealed class HostSession : IDisposable
         }
 
         stream.Write(ControlCodec.Encode(config));
-        StreamReady ready = reader.Expect<StreamReady>(Protocol.HandshakeStepTimeout);
+        StreamReady ready = reader.Expect<StreamReady>(_options.HandshakeStepTimeout, _stop.Token);
 
         ClientHello = hello;
         ClientCapabilities = capabilities;
@@ -496,6 +544,8 @@ internal sealed class HostSession : IDisposable
 
         _pingsInFlight.Clear();
         Interlocked.Exchange(ref _transmittedThisConnection, 0);
+        Volatile.Write(ref _lastReceivedMicros, HostClock.NowMicros);
+        Volatile.Write(ref _lastVideoWrittenMicros, 0);
         _streaming = true;
         RequestKeyframe();
         Interlocked.Increment(ref _connectionsEstablished);
@@ -523,6 +573,10 @@ internal sealed class HostSession : IDisposable
         writer.Start();
 
         SessionEnd end;
+        string? protocolError = null;
+        string? protocolErrorCode = null;
+        bool writerFinished = false;
+        string timing = string.Empty;
         try
         {
             end = ReadLoop(reader);
@@ -533,14 +587,26 @@ internal sealed class HostSession : IDisposable
         }
         catch (ProtocolException exception)
         {
-            TryWrite(stream, new ErrorMessage(exception.Code, exception.Message, true));
+            protocolErrorCode = exception.Code;
+            protocolError = exception.Message;
             end = SessionEnd.Fatal($"{exception.Code}: {exception.Message}");
         }
         finally
         {
+            timing = DescribeLastActivity(HostClock.NowMicros);
             _streaming = false;
             connectionEnded.Cancel();
-            writer.Join(TimeSpan.FromSeconds(2));
+
+            // The writer looks at that token every few milliseconds, unless it is inside a write
+            // that a client which has stopped reading is holding up. Only closing the socket ends
+            // such a write, and nothing more could have been said on it anyway.
+            writerFinished = writer.Join(WriterExitWait);
+            if (!writerFinished)
+            {
+                client.Close();
+                writer.Join(TimeSpan.FromSeconds(2));
+            }
+
             Interlocked.Add(ref _discardedAtDisconnect, _queue.Reset());
             lock (_gate)
             {
@@ -554,7 +620,17 @@ internal sealed class HostSession : IDisposable
             }
         }
 
-        if (_stop.IsCancellationRequested)
+        // Last words go out only once the writer has let go of the stream; two threads writing at
+        // once would interleave their bytes.
+        if (!writerFinished)
+        {
+            _log("the connection was closed without a final message: a write to the client was blocked");
+        }
+        else if (protocolError is not null)
+        {
+            TryWrite(stream, new ErrorMessage(protocolErrorCode!, protocolError, true));
+        }
+        else if (_stop.IsCancellationRequested)
         {
             string reason;
             lock (_gate)
@@ -565,20 +641,50 @@ internal sealed class HostSession : IDisposable
             TryWrite(stream, new Bye(reason));
         }
 
-        return end with { WasStreaming = true };
+        return end with { WasStreaming = true, Timing = timing };
+    }
+
+    /// <summary>
+    /// How long before <paramref name="nowMicros"/> the connection last showed signs of life, for
+    /// the log line about a loss: it is what tells how quickly the loss was noticed.
+    /// </summary>
+    private string DescribeLastActivity(long nowMicros)
+    {
+        long received = Volatile.Read(ref _lastReceivedMicros);
+        long written = Volatile.Read(ref _lastVideoWrittenMicros);
+        string video = written == 0 ? "no video frame had been written" : $"{(nowMicros - written) / 1000} ms after the last video frame was written";
+        return $" (noticed {(nowMicros - received) / 1000} ms after the last message from the client, {video})";
+    }
+
+    private string? RestoreTransport()
+    {
+        if (_options.RestoreTransport is not { } restore)
+        {
+            return null;
+        }
+
+        try
+        {
+            return restore();
+        }
+        catch (Exception exception)
+        {
+            return $"{exception.GetType().Name}: {exception.Message}";
+        }
     }
 
     private SessionEnd ReadLoop(ConnectionReader reader)
     {
         while (!_stop.IsCancellationRequested)
         {
-            if (!reader.TryNext(Protocol.KeepaliveTimeout, _stop.Token, out ReceivedFrame frame))
+            if (!reader.TryNext(_options.KeepaliveTimeout, _stop.Token, out ReceivedFrame frame))
             {
                 return _stop.IsCancellationRequested
                     ? SessionEnd.Lost("stopped")
-                    : SessionEnd.Lost($"nothing was received from the client for {Protocol.KeepaliveTimeout.TotalSeconds:0} s");
+                    : SessionEnd.Lost($"nothing was received from the client for {_options.KeepaliveTimeout.TotalSeconds:0.#} s");
             }
 
+            Volatile.Write(ref _lastReceivedMicros, frame.ReceivedMicros);
             if (frame.Header.Channel != Protocol.ChannelControl)
             {
                 throw new ProtocolException(ErrorCode.UnexpectedMessage, $"The client sent a frame on channel {frame.Header.Channel}; only control messages are expected from it.");
@@ -631,7 +737,7 @@ internal sealed class HostSession : IDisposable
 
     private void WriteLoop(NetworkStream stream, CancellationToken connectionEnded)
     {
-        stream.WriteTimeout = (int)Protocol.KeepaliveTimeout.TotalMilliseconds;
+        stream.WriteTimeout = (int)_options.KeepaliveTimeout.TotalMilliseconds;
         long pingId = 0;
         long nextPingMicros = HostClock.NowMicros;
 
@@ -664,6 +770,7 @@ internal sealed class HostSession : IDisposable
                 try
                 {
                     stream.Write(frame.Bytes);
+                    Volatile.Write(ref _lastVideoWrittenMicros, HostClock.NowMicros);
                     Interlocked.Increment(ref _transmitted);
                     Interlocked.Increment(ref _transmittedThisConnection);
                     Interlocked.Add(ref _transmittedBytes, frame.Length);
@@ -758,7 +865,8 @@ internal sealed class HostSession : IDisposable
         Fatal,
     }
 
-    private readonly record struct SessionEnd(SessionEndKind Kind, string Detail, bool WasStreaming = false)
+    /// <param name="Timing">For a connection that was streaming: when it last showed signs of life.</param>
+    private readonly record struct SessionEnd(SessionEndKind Kind, string Detail, bool WasStreaming = false, string Timing = "")
     {
         public static SessionEnd Lost(string detail) => new(SessionEndKind.Lost, detail);
 

@@ -71,6 +71,26 @@ internal class VideoGate {
     }
 }
 
+/**
+ * Why a connection ended when its input simply stopped, with no goodbye from the host. When this
+ * side closed it, the socket it was reading closes too, and that must not be blamed on the host:
+ * measured on a device, a screen closed by the user was logged as the host having hung up.
+ */
+internal fun describeEndOfInput(stoppedHere: Boolean): String =
+    if (stoppedHere) "Stopped: the live screen was closed." else "The host closed the connection without saying goodbye."
+
+/**
+ * Why a connection was lost when reading from it failed. A link that stays open and goes silent
+ * ends in a read timeout, whose own message is the operating system's "Try again"; measured on a
+ * device, that is all the log said. If nothing arrived for as long as the timeout, say that instead.
+ */
+internal fun describeLostConnection(quietMillis: Long, timeoutMillis: Int, cause: String?): String =
+    if (quietMillis >= timeoutMillis) {
+        "The connection to the host was lost: nothing arrived from it for ${timeoutMillis / 1000} s."
+    } else {
+        "The connection to the host was lost: ${cause ?: "the read failed"}."
+    }
+
 /** Lets through at most one keyframe request per interval, so a run of discarded frames asks once. */
 internal class RequestLimiter(private val minimumIntervalMicros: Long = 500_000) {
     private var lastMicros: Long? = null

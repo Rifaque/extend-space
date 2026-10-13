@@ -14,7 +14,11 @@
       "IMFAttributes.GetBlobSize",
       "IMFAttributes.GetAllocatedString",
       "IMFVideoSampleAllocator.AllocateSample",
-      "IMFVideoSampleAllocatorEx.AllocateSample"
+      "IMFVideoSampleAllocatorEx.AllocateSample",
+      "IDXGISwapChain.Present",
+      "IDXGISwapChain.GetFrameStatistics",
+      "IDXGISwapChain1.Present",
+      "IDXGISwapChain1.GetFrameStatistics"
     ]
   }
 }

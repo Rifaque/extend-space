@@ -56,6 +56,19 @@ internal static class DisplayMonitors
         return monitors;
     }
 
+    /// <summary>
+    /// The refresh rate Windows has the monitor set to, in whole hertz as Windows reports it
+    /// (143.86 Hz is reported as 143), or null if Windows will not say.
+    /// </summary>
+    public static unsafe int? RefreshRate(DisplayMonitor monitor)
+    {
+        var mode = default(DEVMODEW);
+        mode.dmSize = (ushort)sizeof(DEVMODEW);
+        return PInvoke.EnumDisplaySettings(monitor.DeviceName, ENUM_DISPLAY_SETTINGS_MODE.ENUM_CURRENT_SETTINGS, ref mode) && mode.dmDisplayFrequency > 1
+            ? (int)mode.dmDisplayFrequency
+            : null;
+    }
+
     public static void EnablePerMonitorDpiAwareness()
     {
         // Fails harmlessly if awareness was already set; the capture item's own size is what the

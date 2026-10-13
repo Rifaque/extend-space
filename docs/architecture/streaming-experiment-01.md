@@ -1,14 +1,20 @@
 # Experiment 01 — USB mirroring, end to end
 
-Status: **all three steps have run; the experiment's success criteria are not yet met.** A real
+Status: **all three steps have run, and a reliability phase after them; one success criterion
+is still unmet and one fault is unexplained.** In short: a controlled 1080p60 stream ran for ten
+minutes without losing a frame, a pulled USB cable is recovered from automatically, and the lag
+between the two screens was measured once with a camera at about 46 ms. Not done: rotation, and an
+explanation for the capture API occasionally delivering almost nothing while a browser plays video
+full screen. See [Phase 2.4](#phase-24--reliability-and-latency-validation). The steps in order: a real
 Windows display was captured, encoded to H.264 by a hardware encoder and written to a `.h264` file
 that an independent decoder reads without error; see [Step 1](#step-1--capture-and-encode-to-a-file).
 Files from that pipeline were copied to a physical Android tablet and decoded and shown by its
 hardware decoder; see [Step 2a](#step-2a--decode-a-captured-file-on-android). Then the live desktop
 was streamed over USB through `adb forward` and shown on the tablet, for up to three minutes at a
 time, with frame counts and a latency figure measured as far as the tablet's display surface; see
-[Step 3](#step-3--live-stream-over-adb-forward). Still missing: a ten-minute run, glass-to-glass
-latency, a controlled 60 fps source, and a cable actually pulled.
+[Step 3](#step-3--live-stream-over-adb-forward). What step 3 left open (a ten-minute run,
+glass-to-glass latency, a controlled 60 fps source, a cable actually pulled) is what
+[Phase 2.4](#phase-24--reliability-and-latency-validation) then did.
 
 Goal: prove the riskiest assumptions of Mirror mode with the least code — that a Windows display can
 be captured, hardware-encoded to H.264, carried over ADB, hardware-decoded on Android and shown on a
@@ -1197,6 +1203,9 @@ listed as untried; it has now been tried once and not measured.
 
 ### Next step
 
+*As recommended at the end of step 3. [Phase 2.4](#phase-24--reliability-and-latency-validation)
+did items 1 to 3 and investigated item 4 without resolving it.*
+
 **Measure what a person would see, with a source that can be trusted, for long enough to matter.**
 
 1. **Glass-to-glass latency with a camera.** A millisecond counter on the PC monitor, the tablet
@@ -1213,6 +1222,636 @@ After that the code is worth moving: the framing, the session and the decoder ou
 experiment and the debug source set, behind the session coordinator on Windows and the connection
 controller on Android, with the host choosing a configuration from the client's capabilities.
 
+## Phase 2.4 — reliability and latency validation
+
+Run on 2026-10-13, after step 3, against the same PC and tablet. Nothing here is product code: the
+changes are to the experiment and to the debug-only Android screen, and neither application can
+connect yet. This phase measured; it changed code only where a measurement or a test showed a
+defect.
+
+Raw output of every run is in `artifacts/experiment-01/phase-2.4/` (git-ignored): the host report,
+the client's result, the tablet's log, resource samples, the pattern's own account, a screenshot,
+and the camera clip.
+
+### Outcome at a glance
+
+| Workstream | Classification | Evidence in one line |
+| --- | --- | --- |
+| A. Controlled 1080p60 | **Passed** | With a source that was measured to change on every display refresh, 180 s carried 10,801 frames at 60.00 fps, none lost; every second had at least 59 sent. |
+| B. Ten-minute 1080p60 soak | **Passed** | 600.011 s, 35,993 frames encoded = sent = received = decoded = released to the surface, 59.99 fps, no drift in rate or latency, no error on either side. |
+| C. USB disconnect and reconnect | **Passed, after a fix** | A real cable pull was noticed by both sides within 40 ms and the stream resumed by itself 3.3 s after the cable went back. Before the fix it could not have: adb drops its port forward when the device goes. |
+| D. Full-screen capture freeze | **Partially validated; unresolved** | Capture starvation was seen in 4 of 17 full-screen browser runs on the laptop panel, in two clusters hours apart, and in none of 12 with the browser's video overlays turned off. That it is Windows withholding frames, not this program discarding them, is established. The cause is not. |
+| E. Glass-to-glass latency | **Partially validated** | One 120 fps camera clip: the tablet's glass was a median of 45.7 ms behind the monitor's. One clip, seven seconds, a phone camera. |
+
+### Environment
+
+| | |
+| --- | --- |
+| PC | As in step 3: Windows 11 Home build 26300, docked, on mains. Debug builds. |
+| Monitors | External 2560 × 1440, which Windows reports at 144 Hz, primary, on the NVIDIA GeForce RTX 5060 Laptop GPU. Laptop panel 2560 × 1600 at 165 Hz, on the Intel adapter. Both on throughout. |
+| Encoder | NVIDIA H.264 Encoder MFT, hardware, High profile, CBR 12 Mbit/s, 2 s keyframe interval. |
+| Tablet | Xiaomi Pad 7 (`2410CRP4CI`), Android 16, USB. Battery 92 to 94 %. Decoder `c2.qti.avc.decoder`, hardware. |
+| Other | From about half way through, an Android emulator belonging to other work was attached to the same adb server, so every command named the tablet (`--device <serial>`). The PC stayed in use. |
+
+### Two tools added to the experiment
+
+Both are commands of `ExtendSpace.CaptureEncode.exe`. Neither sends or stores anything.
+
+**`pattern`** shows an animated test pattern in a borderless window and presents a new picture on
+every display refresh through a DXGI swap chain. It is drawn with rectangle clears only: no
+shaders, fonts or new dependencies. It replaces the `ffplay` window of step 3, which was not a
+steady source. Every picture carries:
+
+- a six-digit clock of elapsed milliseconds and a six-digit frame counter, as seven-segment digits;
+- a row of 30 cells in which one lit cell steps along by one per frame;
+- a block that crosses the window once a second;
+- a mosaic that changes completely on every frame, which is what makes the encoder fill its
+  bitrate target (the step 3 pattern needed about 7 of 12 Mbit/s; this one uses all 12).
+
+It prints, each second, how many pictures it presented against how many refreshes the monitor had,
+and at the end DXGI's own count of presents against refreshes. So that the source did its job is
+measured in every run rather than assumed. `--model flip|blt` chooses how the window presents,
+`--fullscreen` covers the monitor, and `--sync-interval` presents on every n-th refresh.
+
+**`probe`** runs the same capture and encoding as `stream`, discards the result, and prints each
+second what the capture API did: how many frame-arrived events Windows raised, how many frames came
+with them, how many this program then set aside (paced out, overtaken), and what the encoder took
+and produced. It exists to tell "Windows stopped delivering frames" from "this program threw them
+away", which no earlier output could.
+
+```powershell
+cd apps\windows
+$exe = "experiments\ExtendSpace.Experiments.CaptureEncode"
+dotnet run --project $exe -- pattern                       # until Esc, a right-click on it, or Ctrl+C
+dotnet run --project $exe -- pattern --fullscreen --model blt --monitor 1 --duration 10
+dotnet run --project $exe -- probe --monitor 0 --duration 60 --output-size 1920x1080 --fps 60 --no-border
+```
+
+### A. Controlled 1080p60
+
+**Procedure.** The pattern in a 1920 × 1080 always-on-top window on the external monitor, flip
+model, a new picture every refresh. Then, with the live screen open on the tablet:
+
+```powershell
+dotnet run --project $exe -- stream --device <serial> --output-size 1920x1080 --fps 60 --bitrate 12M --duration 180 --no-border
+```
+
+**Requested against actual.** The step 3 column is the historical baseline, not a new measurement.
+
+| | Step 3 baseline (`ffplay` window) | Phase 2.4, 180 s (`a1-1080p60-flip`) | Phase 2.4, 600 s (`b1-soak-1080p60-600s`) |
+| --- | --- | --- | --- |
+| Requested | 1920 × 1080, 60 fps, 12 Mbit/s | the same | the same |
+| Measured duration | 180.013 s | 180.017 s | 600.011 s |
+| Source: pictures presented per second | not measured | 141.25 (lowest second 137) | 143.63 (lowest second 120) |
+| Capture delivered, average | 58.65 fps | 82.54 fps | 73.34 fps |
+| Capture delivered, lowest second | 20.78 | 80.2 | 68.6 |
+| Seconds in which capture delivered 60 or more | 102 of 180 | 180 of 180 | 600 of 600 |
+| Encoded | 8765 | 10,801 | 35,993 |
+| Transmitted | 8765 | 10,801 | 35,993 |
+| Received by the client | 8765 | 10,801 | 35,993 |
+| Decoded = released to the surface | 8765 | 10,801 | 35,993 |
+| Dropped, missing or discarded, either side | 0 | 0 | 0 |
+| **Average frame rate, transmitted = rendered** | **48.69 fps** | **60.00 fps** | **59.99 fps** |
+| Transmitted per second, min / median / max | 20.78 / 57.64 / 61.01 | 59.4 / 60.0 / 60.5 | 57.7 / 60.0 / 60.9 |
+| Seconds with 59 or more transmitted | 71 of 180 | 180 of 180 | 596 of 600 |
+| Average bitrate | 7.297 Mbit/s | 12.014 Mbit/s | 12.007 Mbit/s |
+| Largest send queue seen | 1 frame | 1 frame | 1 frame |
+| Capture → released to the surface, mean | 19.02 ms | 19.07 ms | 19.71 ms |
+| Host processor time | 5.3 % of one logical processor | 6.0 % | 6.0 % |
+| Host peak working set | 119.2 MiB | 119.0 MiB | 121.4 MiB |
+
+**Sustained 1080p60 is demonstrated** for this PC, this tablet and this source, for ten minutes.
+The baseline's shortfall was the source: where nothing else on the screen was changing, `ffplay`
+showing a 60 fps clip was measured here to give the capture API about 54 or 55 frames a second (see
+workstream D), and this pipeline does not repeat frames.
+
+Things the table needs read with it:
+
+- **The source runs at the monitor's refresh rate, about 144 pictures a second, not at 60.** The
+  pipeline's pacer picks 60 of them. That is the product's situation whenever content changes
+  faster than the stream, and it is the only way to offer a steady supply on a 144 Hz monitor,
+  where 60 fps content cannot be evenly spaced. It also means the 60 frames sent are 14, 21 or 28 ms
+  apart rather than a steady 16.7. How that looks was not assessed.
+- **Capturing slows the pattern a little.** On its own the flip-model pattern presented on every
+  refresh (806 presents over 803 refreshes). While it was being captured it fell a few pictures
+  short in some seconds: about 100 of the 620 seconds it ran for the soak, 232 pictures in all, the
+  worst second 120. Capture never delivered fewer than 68.6 frames in a second.
+- **The client's per-second rates wobble by about one frame** (57.7 to 63.0) because they are worked
+  out from its own once-a-second reports, whose spacing is not exact. The totals are exact.
+- **Capture delivered either 72 or 82.5 frames a second**, switching between the two within a run.
+  Those are every second refresh of 144 Hz and of 165 Hz. With two monitors at different rates,
+  Windows evidently rounds the capture interval to one monitor's beat or the other's. Presents
+  showed the same thing: a present on the 144 Hz monitor returned on the 165 Hz monitor's beat.
+  Neither was investigated; with the pacer in front it did not matter.
+
+### B. Ten-minute soak
+
+`b1-soak-1080p60-600s`: the same command with `--duration 600`. It ran to the end: "the requested
+duration elapsed", one connection established, none lost, no keyframe request from the client, no
+decoder error, no problem logged on the tablet, no app crash.
+
+**Over time.** The run cut into fifths, the first five seconds left out of the first:
+
+| | First fifth | Middle fifth | Last fifth |
+| --- | ---: | ---: | ---: |
+| Transmitted, median per second | 60.00 fps | 60.00 fps | 60.00 fps |
+| Rendered on the client, median per second | 59.80 fps | 59.90 fps | 59.80 fps |
+| Bitrate, median per second | 12.05 Mbit/s | 12.07 Mbit/s | 12.09 Mbit/s |
+| Capture → released, median of per-second means | 19.9 ms | 20.0 ms | 19.4 ms |
+| Capture → released, median of per-second 95th percentiles | 27.2 ms | 27.5 ms | 26.4 ms |
+
+**Latency over the whole run.** The client reports count, minimum, mean, 95th percentile and
+maximum once a second, so what exists is a distribution of seconds, not of frames:
+
+| Capture → released to the surface | min | 5 % | median | 95 % | max |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Per-second mean | 17.1 | 18.4 | 19.7 | 21.1 | 28.4 ms |
+| Per-second 95th percentile | 22.8 | 24.5 | 27.0 | 30.6 | 117.5 ms |
+| Per-second 95th percentile, after the first 5 s | 22.8 | 24.5 | 27.0 | 30.5 | 41.6 ms |
+| Per-second maximum, after the first 5 s | 25.2 | 26.9 | 30.6 | 43.7 | 79.2 ms |
+
+Over all 35,993 frames the mean was 19.71 ms (clock relation ±1.2 ms). On the host alone, capture →
+encoded: mean 2.35 ms, median 2.25, 95th percentile 2.82, maximum 23.89. The single worst frame of
+the run, 149.2 ms, was in the first second, while the decoder started. A per-frame median across
+devices is not available; the median of the per-second means, 19.7 ms, is the nearest thing.
+
+**Resources**, sampled every 20 s from outside the processes:
+
+| Time into the run | Host working set | Host processor time, cumulative | Tablet app, total PSS | Tablet battery temperature | Android thermal status |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| start | 79.0 MiB | 0.3 s | 173 MB | 36.0 °C | 0 |
+| 1 min | 115.7 MiB | 4.7 s | 185 MB | 36.0 °C | 0 |
+| 3 min | 116.6 MiB | 11.8 s | 187 MB | 37.0 °C | 0 |
+| 4 min | 117.6 MiB | 15.8 s | 175 MB | 37.0 °C | 0 |
+| 5 min | 118.5 MiB | 18.2 s | 205 MB | 37.0 °C | 0 |
+| 7 min | 119.6 MiB | 28.7 s | 204 MB | 37.0 °C | 0 |
+| 9.5 min | 120.4 MiB | 35.6 s | 204 MB | 37.0 °C | 0 |
+
+- The host grew by about 5 MiB between the first and the tenth minute. The experiment keeps its
+  per-frame timing samples in memory for the report, up to 144,000 of each, which accounts for
+  growth of that size and stops at that limit. That explanation was not tested by removing them.
+- The tablet app's memory moved in steps: up to 187 MB over the first three minutes, down to 175,
+  up to 205 at the fifth minute, and then flat at 204 for the last five. Steps in both directions
+  are not a leak, and ten minutes is not long enough to rule one out.
+- The battery read 94 % at the start and 92 % at the end: on this USB port the tablet discharges
+  slowly while it decodes and lights its screen.
+
+Not measurable here: a frame shown twice or held too long on the tablet. Sequence numbers show a
+frame that did not arrive (none); nothing in the pipeline looks at what is on the glass. The camera
+clip of workstream E is the only evidence about that, and it covers seven seconds.
+
+### C. USB disconnect and reconnect
+
+#### What the behaviour is meant to be
+
+From the [protocol draft](../../protocol/specification/protocol.md#12-errors-and-reconnection) and
+the [overview](overview.md): when a connection is lost without a goodbye the host retries *the
+transport*, with backoff from 250 ms to 4 s, for a budget of 30 s (`--reconnect-seconds`), and then
+fails. Over USB the transport is the adb forward. The Android side has nothing to retry: it goes
+back to listening and waits. So a cable that returns within the budget should bring the stream back
+without anyone touching either device; one that returns later needs the host started again, and
+never the app.
+
+#### What was wrong, found before any cable was pulled
+
+Reading the lifecycle against adb's behaviour gave one suspicion, which a command confirmed:
+**adb removes a port forward when its device disconnects and does not put it back when the device
+returns.** The experiment made the forward once, at the start. After any real disconnection every
+retry would have been refused until the budget ran out. Step 3's reconnection tests did not show
+this because killing the app leaves the forward in place.
+
+Then the automated tests were extended, first against the unchanged session, to see what failed:
+
+| Behaviour tested | Before | Change |
+| --- | --- | --- |
+| After a loss the transport is set up again before each new attempt | No such step existed. | The session calls a transport-restore step before every attempt after the first; for USB that runs `adb forward` again. A failure is an ordinary failed attempt, retried within the budget. |
+| A transport that cannot be set up again fails the session when the budget is spent | — | Same change; the reason given is adb's own message. |
+| Stopping while a handshake is stalled returns promptly | **Failed:** it waited the whole 5 s handshake timeout and returned with the session thread still running. | The handshake waits are cancellable. |
+| A client that stops reading costs frames, not memory, and does not hold up stopping | Queue stayed bounded and frames were counted as dropped (passed). **Stopping took 2.5 s**, and wrote the goodbye onto the socket while another thread was still blocked writing to it. | A writer that has not let go within 250 ms is ended by closing the socket; nothing more is written to it. |
+| Starting a session twice is refused | **Failed:** a second thread would have been started on the same state. | Refused with an exception. |
+| A client that goes silent is lost after the keepalive timeout and the host connects again | Passed. This path had no test before. | Timeouts became settable so that the test takes half a second. |
+| A handshake that stalls is given up, its socket closed, and the next client served | Passed. | — |
+| A client that leaves partway through the handshake is retried rather than fatal | Passed. | — |
+| A connection that ends in the middle of a message is lost and re-established | Passed. | — |
+| Stopping before anything has connected ends at once | Passed. | — |
+
+On Android the session object cannot be exercised without a device, so its deterministic parts are
+what is unit-tested: the gate that decides what to decode (no surface, sequence gap, decoder
+failure, restart from a keyframe), the request limiter, the latency arithmetic, and now the wording
+of how a connection ended. The rest of this section is what the device showed.
+
+#### Scripted on the tablet (no hands)
+
+| Test | What was done | What happened |
+| --- | --- | --- |
+| Forward and app both lost (`c1-forward-lost`) | 12 s into a 720p30 stream: `adb forward --remove`, then the app force-stopped; app started again 8 s later. | Host: "connection lost … noticed 548 ms after the last message from the client, 14 ms after the last video frame was written". It put the forward back itself, found no app listening, kept trying, and was `Streaming` again at 24.2 s. 2 connections, 1 lost. Without the fix this run would have ended in `Failed`. |
+| A second host while one is streaming (`c2`) | A second `stream` started 10 s into the first, with an 8 s budget. | The second failed cleanly after its budget, exit code 1, because the app serves one host at a time and left it waiting. The first was not disturbed. When the second exited it removed the forward the first was relying on; the app was then killed and restarted, and the first host restored the forward and reconnected. |
+
+The second host's failure originally read "the client did not send its Hello message within 5 s".
+It now says that nothing answered and that another stream may already be connected.
+
+A warning for anyone repeating this: `adb reconnect`, which looks like the obvious way to simulate
+a disconnection, left the tablet absent from adb for at least 38 s here, until the adb server was
+restarted. It was not used again.
+
+#### The cable, pulled by hand
+
+Three attempts. The tablet's side of each is from its own log (`adbd` reporting the USB link, and
+the app's "Connection ended N ms after the last bytes from the host arrived").
+
+| | Pull 1 | Pull 2 (`c3-cable-pull-2`) | Pull 3 (`c3-cable-pull-3`) |
+| --- | --- | --- | --- |
+| Stream | 1080p60, 170 s | 1080p60, up to 600 s | 1080p60, up to 600 s |
+| Reconnect budget | 90 s | 120 s | **5 s**, to force the give-up path |
+| Cable out for | — | 12.7 s | 14.7 s |
+| Host noticed | — | 39 ms after the last message from the client, 9 ms after the last frame it wrote | 216 ms after the last message, 7 ms after the last frame |
+| Tablet noticed | — | 33 ms after the last bytes arrived; 19 ms after `adbd` logged the link down | 23 ms after the last bytes; 24 ms after `adbd` |
+| While the cable was out | — | `Reconnecting`; "the transport could not be set up: adb.exe: device '<serial>' not found" | the same, then `Failed` after 5.0 s: "no connection could be re-established within 5 s" |
+| Recovery | — | **By itself.** `Streaming` again 15.96 s after the loss, about 3.3 s after the cable went back in. Full handshake, fresh keyframe. | None, by design. A new `stream` against the same app process, not restarted, then ran 1201 frames at 60.05 fps. |
+| Frames | — | 964 captured frames released unencoded during the outage; no encoded frame dropped. 7240 sent over both connections, 7239 received by the tablet's own log: one frame was in flight when the cable came out. | All 10,550 frames sent before the pull were received. |
+| Afterwards | — | Forward in place while running and removed at the end; no host process left; app did not crash. | No forward, no host process; the app's process was the same one, listening. |
+
+**Pull 1 missed.** The tablet's log shows the cable coming out a minute and a half after that
+three-minute stream had ended. It taught nothing about streaming; it did show the tablet returning
+to adb by itself after a replug with nothing running.
+
+Notes:
+
+- When the tablet cannot send its last statistics, the host's report shows frames "not reported
+  received" (54 in pull 2, 13 in pull 3). The tablet's log, read after the cable was back, gives
+  the true counts above. The host cannot know them.
+- The app logged pull 2's second connection as "the host closed the connection without saying
+  goodbye" when it was the tablet's own Back key that ended it. That wording is fixed and
+  unit-tested. The tablet had been taken away by the time that build was ready, so the cable pulls
+  and the soak are from the build before it; the fix was confirmed on the device later the same
+  day (see [the audit](#audit-later-the-same-day)).
+
+#### Still not tested
+
+- **A link that goes silent without closing** was not covered by the cable pulls: both were
+  reported to both ends as a closed connection within tens of milliseconds, so the 5 s keepalive
+  timeout never had to act. It was tested separately afterwards, on both sides; see
+  [the audit](#audit-later-the-same-day).
+- Pulling the cable at the PC end as opposed to the tablet end (which end was pulled was not
+  recorded), a hub, a different cable, a second device.
+- Rotation, and the tablet's screen turning off during a stream.
+- A hostile or malformed peer against the running apps, as before.
+
+### D. The full-screen capture freeze
+
+Step 3 reported that the capture API delivered nothing while a browser showed a full-screen video.
+The question was whether that can be reproduced, and whether frames stop arriving or are being
+discarded.
+
+**Method.** `probe` on one monitor while something is shown on that monitor in a known way for
+about ten seconds, with nothing shown before and after. What was shown reported its own rate: the
+pattern counts its presents, and the browser page was a local file whose only content is a looping
+60 fps video and which writes the player's own frame count into its window title, read from outside
+the browser. Chrome was a separate instance with a throwaway profile, so the browser in use on the
+machine was not involved.
+
+**What each second of silence means.** With a still screen the capture API raises no events at all.
+That is how it is designed, it is what the idle phases of every run below show, and it is the first
+thing to rule out whenever "capture froze" is reported.
+
+| Shown | How | External monitor (NVIDIA) | Laptop panel (Intel) |
+| --- | --- | --- | --- |
+| Test pattern | window, blt model | 74 events/s, 60 encoded | 79 events/s (the pattern managed only 79 pictures/s here), 60 encoded |
+| Test pattern | window, flip model | 75, 60 encoded | 94, 60 encoded |
+| Test pattern | full screen, blt model | 74, 60 encoded | 57, 56 encoded (source again 79/s) |
+| Test pattern | full screen, flip model | 73, 60 encoded | 100, 60 encoded |
+| `ffplay`, 60 fps clip | window | 70, 59 encoded | 54.5, 53.5 encoded |
+| `ffplay`, 60 fps clip | full screen | 55, 53 encoded | 54, 53 encoded |
+| Chrome, 60 fps video | window | 74.5 and 75.5 (2 runs) | 62 to 70 (4 runs) |
+| Chrome, 60 fps video | full screen | 59 to 60 (4 runs) | 59.5 to 62.5 in 13 runs; **starved in 4** (medians 12.5, 23.5, 33.5, 32.5) |
+| Chrome, 60 fps video, `--disable-direct-composition-video-overlays` | full screen | not run | 59.5 to 63 in all 12 runs |
+
+Figures are the median number of frame-arrived events per second during the phase.
+
+**The one run that starved** (`d8-chrome-laptop-fullscreen`, the first full-screen Chrome run on
+the laptop panel). For the ten seconds measured, Chrome's own counter advanced by 660 frames with
+none newly dropped: it was showing 60 frames a second. In the same seconds Windows raised between 3
+and 44 frame-arrived events a second, median 12.5, including five consecutive seconds of 3 to 5.
+This program paced out at most 7 of those in any second. The encoder produced a median of
+412 kbit/s where every normal run produced about 11,800, so what did arrive had hardly changed
+from one frame to the next. The same command repeated eight more times that afternoon behaved
+normally every time.
+
+**It came back five hours later.** During the audit the first three full-screen runs on the laptop
+panel starved again, each with a brand-new browser profile, and each alternating with a run that
+had video overlays disabled and was normal. Then it stopped: the next two default runs were normal,
+and so were three more that played for 45 seconds each instead of 10.
+
+| Run (laptop panel, full screen, default flags) | Browser's own rate | Capture events per second while it played | Encoded |
+| --- | ---: | --- | ---: |
+| `d8`, 15:19 | 60 fps | 3 to 44, median 12.5; a 5 s stretch of 3 to 5 | 412 kbit/s |
+| `g0-check`, 20:12 | 60 fps | 4 to 46, median 23.5; a 5 s stretch of exactly 4 | 308 kbit/s |
+| `g1-fresh-default-1`, 20:13 | 60 fps | 14 to 54, median 33.5; a 5 s stretch of 14 to 18 | 1470 kbit/s |
+| `g1-fresh-default-2`, 20:14 | 60 fps | 17 to 54, median 32.5; a 4 s stretch of 17 to 19 | 1344 kbit/s |
+| the other 13 | 50 to 61 fps | medians 59.5 to 62.5; lowest single second 43 | about 11,900 kbit/s |
+
+All three evening runs had the same shape: about twelve seconds of an irregular 25 to 57 events a
+second from the moment the browser opened, then a drop to a flat low rate that lasted until the
+browser was closed. That low rate, 4 in one run and about 17 in the others, is close to what the
+same monitor produced with the browser gone (2, and 12 to 18), which is to say that in those
+seconds the video itself seems to have contributed no capture events at all. A normal run sits at
+60 from its second second.
+
+**What this establishes**
+
+- The starvation is real and it is upstream of this program. When it happens Windows raises few or
+  no capture events; the pacer and the encoder are not the ones discarding. That question is
+  closed.
+- It is not caused by full-screen presentation as such. A full-screen flip-model swap chain, which
+  is what a game presents, was captured normally on both monitors, as was full-screen `ffplay`.
+- It is intermittent and it clusters: 4 of 17 identical runs, one in the afternoon and three in a
+  row in the evening, with long runs of normal behaviour on either side.
+- It is not backpressure from this program. In the starved seconds no frame was overtaken, none
+  arrived to an empty pool, and the encoder returned as many pictures as it was given, each second.
+  This program holds at most two of the capture pool's three buffers. What is low is the number of
+  events Windows raises.
+- It was not an invalid reproduction: in every run the browser was a separate window whose position
+  was read back from Windows, the page reported itself visible, and its own counter showed it
+  presenting 60 frames a second.
+
+**What it does not establish**
+
+- **The cause.** Every run that starved was hardware-decoded browser video, full screen, on the
+  adapter that does not do the encoding. That is the situation in which Windows can put video on a
+  hardware overlay plane instead of composing it, and a capture that follows composition would then
+  see nothing change. The evidence now leans that way and does not get there: with Chrome's video
+  overlays disabled 12 runs of 12 were normal, against 13 of 17 with them enabled, and in the
+  evening cluster the three starved runs alternated with two overlay-disabled runs that were
+  normal. But 4 in 17 against 0 in 12 is within what chance allows (about one time in ten), the
+  starved runs came in clusters whose trigger is unknown, and nothing here observed which plane the
+  video was on. It remains a hypothesis.
+- **What starts and ends a cluster.** A new browser profile was suspected and ruled out: three
+  starved runs and five normal ones all used new profiles. Playing for longer was suspected and
+  ruled out for 45 seconds. Whatever else was on that monitor differed between the times and was
+  not controlled.
+- **Whether it is what step 3 saw.** That was YouTube, full screen, in the everyday browser, on the
+  external monitor. Full-screen browser video on the external monitor was normal in four runs here.
+  The original scenario itself was not re-run: an attempt to do so through the everyday browser was
+  discarded when a one-frame check showed the test tab had been opened behind another tab, so that
+  nothing on screen was changing. Without that check it would have been reported as a reproduction.
+- Whether a paused video, a still screen, or protected content was involved in the original
+  observation. Any of them would also have produced a still picture.
+
+**Also learned.** `ffplay` showing a 60 fps clip gave the capture API 54 to 55 frames a second in
+the three phases where it was the only thing changing (53 encoded). In the fourth, a window on the
+external monitor with the desktop around it also changing, 70 events arrived and 59 were encoded.
+It is not a 60 fps source, which is what step 3 suspected.
+
+**Status: unresolved, retained as an open investigation.** No workaround was applied, and none
+should be on this evidence: turning overlays off is a browser launch flag, not something a mirroring
+product can ask of its users, and it has not been shown to be the cause.
+
+**Why no presentation trace was taken.** The tool that would settle it records, for each present,
+whether it was composed, flipped independently or put on an overlay plane. That is PresentMon,
+which reads kernel graphics events. It is not installed on this machine, and reading those events
+needs an elevated session or membership of the Performance Log Users group; the session this work
+ran in has neither, and changing that was not something to do without being asked. A process named
+`PresentMonService` is running on the machine, evidently installed by other software, but it offers
+no command-line interface and was left alone.
+
+**Next step, as a procedure**
+
+1. In an elevated PowerShell, with PresentMon downloaded from its publisher (Intel, GameTechDev):
+   `PresentMon-x64.exe --process_name chrome.exe --output_file presents.csv --timed 40 --terminate_after_timed`.
+   Its `PresentMode` column says, per present, `Composed: Flip`, `Hardware: Independent Flip`,
+   `Hardware Composed: Independent Flip` (an overlay plane) and so on.
+2. In an ordinary prompt at the same moment:
+   `ExtendSpace.CaptureEncode.exe probe --monitor 1 --duration 40 --output-size 1920x1080 --fps 60 --no-border`.
+3. Start the video: a separate Chrome with its own `--user-data-dir`, `--start-fullscreen`, opening
+   the test page kept with the evidence (`scripts/testpage.html`, which loops a 60 fps clip and
+   writes the player's frame count into the window title). `scripts/d_chrome.sh` does steps 2 and 3
+   and records the phase times.
+4. Repeat until a run starves; it took between one and nine tries here. Then compare the
+   `PresentMode` of the seconds in which `probe` shows few events with the seconds in which it
+   shows 60. If the starved seconds are overlay presents and the normal ones are composed, the
+   hypothesis is confirmed; if both are composed, it is refuted.
+5. Run it also with `--monitor 0` on the external monitor, and with the original scenario, YouTube
+   full screen in the everyday browser, in front.
+
+### E. Glass-to-glass latency
+
+**What was measured.** How far the picture on the tablet's glass is behind the picture on the PC
+monitor's glass at the same instant, with the tablet mirroring that monitor at 1080p60 over USB.
+That is what someone looking at both screens sees. It was measured with a camera and with nothing
+from either device's clock.
+
+**Setup.** The pattern on the external monitor, streamed to the tablet (`e1-camera`, 516 s,
+59.98 fps, 30,983 frames sent and 30,983 received). The tablet propped in front of the monitor so that one phone camera saw
+both. A 7.04 s clip recorded in the phone's slow-motion mode: 845 frames, which the file's own
+metadata gives as captured at 120 frames a second, so 8.33 ms per camera frame.
+
+**Reading it.** The pattern's stepping cell is the frame number modulo 30, so in any one camera
+frame the lit cell on the monitor and the lit cell on the tablet differ by the number of pattern
+frames the tablet is behind. For every camera frame, a script took the brightness along the
+stepping row on each screen and found the brightness-weighted position of what was lit. Where each
+of the 30 cells lies in the picture was learned from the clip itself, from where lit cells were
+seen over the seven seconds, so no measurement of the picture by hand went into it. The difference
+in cells was turned into time with the pattern's own measured rate during that run, 143.6 pictures
+a second (6.96 ms each). Camera frames in which the monitor's lit cell was outside the picture (the
+window's right-hand end was cut off) or was wrapping from the last cell to the first were left out:
+411 of 845. Which frames those are depends on the frame number, not on the latency.
+
+**Result**, 434 camera frames:
+
+| Tablet's glass behind the monitor's glass | |
+| --- | ---: |
+| Median | 45.7 ms |
+| Mean | 45.7 ms |
+| 5th to 95th percentile | 38.8 to 53.3 ms |
+| Minimum, maximum | 32.6, 66.0 ms |
+
+In the same seconds the pipeline's internal figure, capture hand-over to release to the tablet's
+surface, had a mean of 19 to 20 ms.
+
+**How far to trust it**
+
+- Each reading is good to about one pattern frame, ±7 ms. The monitor shows a new picture every
+  6.9 ms and a camera frame lasts 8.3 ms, so most camera frames catch two pictures on the monitor
+  and, since the tablet changes picture 60 times a second, often two on the tablet. The weighted
+  position averages over that. The phone's sensor is also read out line by line, which can shift
+  the two screens against each other by a few milliseconds in any one frame, in either direction.
+- The spread is real, not noise. The tablet holds each picture for 16.7 ms while the monitor moves
+  on every 6.9 ms, and the 60 frames sent each second are 14 to 28 ms apart. The lag therefore
+  rises and falls by about that much many times a second.
+- It is a comparison of two screens. The monitor's own delay from composition to light is not
+  separated out; a faster or slower monitor would move the figure.
+- **One clip, seven seconds, one camera position, one phone.** Two stills were also checked by hand
+  and agree with the script: in one the two frame counters read 6 apart (42 ms), in another the lit
+  cells were 4.5 to 8.5 apart with the tablet caught between two pictures (31 to 59 ms). Reading the
+  clock digits by eye was tried and abandoned: two blended seven-segment digits read as a third, and
+  the readings disagreed with the counters beside them.
+- The exposure time of the camera is not known, and 120 frames a second is the file's claim.
+
+**So: about 46 ms glass to glass in this setup, of which the pipeline's own measured part is about
+20 ms.** The other 26 ms or so is the two displays: what the tablet does between the app releasing
+a frame and its panel showing it, less what the monitor does between Windows composing a frame and
+its panel showing it. Those were not measured separately. This is a first measurement, not a
+characterisation: it wants repeating at several moments, with a camera whose timing is known, and
+at 720p30.
+
+**The four figures, kept apart**
+
+| Figure | From | To | Value here | How |
+| --- | --- | --- | --- | --- |
+| Host stage | Windows hands the frame to the host | encoded picture reaches the sender | 2.2 ms mean | one clock |
+| Internal pipeline | Windows hands the frame to the host | tablet app releases the decoded frame to its surface | 19.7 ms mean over ten minutes | two clocks related by ping, ±1.2 ms |
+| Tablet display time | release to the surface | light from the tablet's panel | **not measured**; Android's callback does not report it on this device | — |
+| Glass to glass | light from the monitor | light from the tablet | 45.7 ms median, one clip | camera |
+
+### Defects found, and what was done
+
+| # | Found by | Defect | Fix | Regression test |
+| --- | --- | --- | --- | --- |
+| 1 | Reading the lifecycle; confirmed with adb | The adb forward was made once; adb drops it when the device disconnects, so no reconnection after a real disconnection could succeed. | The session restores its transport before each new attempt. | Two host-session tests; confirmed on the device by cable pull 2 and by `c1-forward-lost`. |
+| 2 | New test | Stopping during a stalled handshake blocked for the 5 s handshake timeout and returned with the session thread still alive. | Cancellable handshake waits and connect. | Host-session test. |
+| 3 | New test | Stopping with a write blocked took 2.5 s and wrote a goodbye onto a socket another thread was still writing to. | The socket is closed to end the blocked write; no last message is attempted. | Host-session test. |
+| 4 | New test | A session could be started twice. | Refused. | Host-session test. |
+| 5 | Device run `c2` | A host refused by a busy app was told only that no Hello came. | The message says another stream may be connected. | Host-session test. |
+| 6 | Tablet log | The app logged its own closing as the host hanging up. | Wording depends on which side closed. | Android unit test; confirmed on the device in the audit. |
+| 7 | Device test in the audit | When the host went silent the app's log gave the reason as "Try again", the operating system's text for a read that timed out. | It now says that nothing arrived for 5 s. | Android unit test; confirmed on the device. |
+| 8 | Reading the code, in the final review | Closing the live screen said goodbye, closed the socket and waited for the session's threads on the UI thread. A write to a host that is not reading blocks for the socket's 5 s send timeout, and there are two such writes, behind a lock the statistics timer may be holding in a write of its own. | Stopping returns at once and the work runs on its own thread. The goodbye gets 500 ms; then the socket is closed whatever happened, which also frees any write still stuck. Opening the screen again retries taking the socket's name for up to 2 s, since the previous session may still be finishing. | Seven Android unit tests for the two pieces of logic; confirmed on the device. |
+
+Also changed, not defects: the host's loss message and the app's log now say how long before the
+loss the connection last showed life, which is where the "noticed within" figures come from; the
+session's timeouts can be set by tests; the capture code counts frame-arrived events as well as
+frames, for `probe`.
+
+Two mistakes in the test harness itself, caught before they reached a result: the crash check
+counted another app's crash on the tablet as ours until it was made to look at the package name;
+and the background browser tab described under D.
+
+### Build and test results
+
+| Command | Result |
+| --- | --- |
+| `dotnet build ExtendSpace.slnx` (in `apps/windows`) | Succeeded, 0 warnings, 0 errors |
+| `dotnet test --solution ExtendSpace.slnx` | 355 passed, 0 failed, 0 skipped (24 for the app's core, 331 for the experiment; 299 before this phase, 353 before the audit). The suite was run repeatedly while it grew; the one intermittent failure seen was a race in a new test's own setup, since fixed. |
+| `git diff --check` | Clean |
+| `.\gradlew.bat assembleDebug testDebugUnitTest lintDebug` (in `apps/android`) | Succeeded. 91 unit tests passed, 0 failed, 0 skipped (82 before this phase, 83 before the audit, 84 after it). Lint: 0 errors, 1 warning, the Gradle-version notice as before |
+| `.\gradlew.bat assembleRelease` | Succeeded. Release manifest: one activity, `MainActivity`. No `livestream`, `LiveStream`, `decodertest`, `DecoderValidation` or `org/json` string in the release dex (27 lines match `livestream` in the debug dex). No network permission. |
+| `adb install -r app-debug.apk` | Succeeded. The soak, the cable pulls and the camera clip used the build before the last two log-message changes and the stop-path change; the final build was installed and exercised afterwards, as described under the audit and the final review. |
+
+Baseline before any change, on the same day: 299 and 82 passing, lint 0 errors and 1 warning.
+
+### Limitations
+
+- One PC, one tablet, one cable, one day; debug builds; a machine in use.
+- Ten minutes is the longest run. The tablet app's memory stepped up once in it.
+- The source ran at 144 pictures a second. A source at exactly 60, the case the pacer's uneven
+  spacing would matter most for, cannot be produced on this monitor.
+- 720p30 was not re-measured in this phase; its only results are step 3's.
+- Glass to glass is one seven-second clip.
+- The capture starvation is unexplained and can evidently happen without warning.
+- No presentation trace exists: the session had no rights to take one.
+
+### Still pending on a device
+
+1. The capture starvation with presentation events being recorded, as set out under D, including
+   the original YouTube full-screen scenario.
+2. A second glass-to-glass clip, at another moment and at 720p30.
+3. Rotation, and the tablet's screen turning off during a stream.
+
+Done in the audit and no longer pending: the final debug build on the device, and a link that goes
+silent on each side.
+
+### Audit, later the same day
+
+The working tree was re-read against this section, the tests were re-run, and three things left
+open above were followed up with the tablet attached again. Corrections it produced are made in
+place above; what it added is here.
+
+**The working tree** was as described: the same commit, the same 21 modified files and 4 new
+paths, nothing staged, nothing under `artifacts/` tracked, no local path or credential in the
+changes. One figure in this section was wrong and is corrected: `ffplay` gave the capture API 54 to
+55 frames a second, not "53 to 59", which mixed in the encoder's count. The tablet's adb serial,
+which had been written into three commands here, is now `<serial>`.
+
+**A link that goes silent with the socket still open**, 720p30, final build (`f3-silent-link`, run
+twice with the same result):
+
+| | Host goes silent | App goes silent |
+| --- | --- | --- |
+| How | The host process was suspended for 9.4 s. adb, the cable and the socket stayed up. | The app's process was stopped (`kill -STOP` through `run-as`) for 9.2 s. |
+| Who has to notice | The tablet | The host |
+| What it logged | "Connection ended 5021 ms after the last bytes from the host arrived: … nothing arrived from it for 5 s." | "connection lost: nothing was received from the client for 5 s (noticed 5002 ms after the last message from the client …)" |
+| Cleanup | The app closed the connection, released its decoder and listened again. | The host's writer was blocked on the stalled app; the host closed the socket to end that write and logged that no final message could be sent. No encoded frame was left unaccounted for. |
+| Recovery | When the host was resumed it found the connection gone and was `Streaming` again 0.3 s later. | The host retried while the app was stopped; it was `Streaming` again 0.6 s after the app was continued. |
+
+So the 5 s timeout works on a device on both sides, to within about 30 ms, and each side cleans up
+and carries on. The app did not crash and its process was the same throughout. This is a frozen
+process, not a cable that has stopped carrying data while both ends are healthy; the second was not
+produced, and both ends would see it the same way.
+
+Two deterministic tests were added on the host for what the device showed: a client that keeps
+sending is never timed out, and a client that has stopped both sending and reading is still timed
+out, has its socket closed, and is replaced by the next client.
+
+**The final debug build** was installed and run: 1080p60 for 30 s, 1798 frames sent, received and
+released, 59.92 fps; then a 720p30 stream ended with the Back key, which the host reported as the
+client ending the session and the tablet logged as "Stopped: the live screen was closed."
+
+**The capture starvation** was reproduced three more times and is written up under D.
+
+### Final review: leaving the live screen
+
+The audit noted that the live screen's stop path wrote to the socket from the UI thread. Traced
+through: the Back key finishes the activity, the view model is cleared on the main thread, and that
+called the session's `stop()`, which sent the final statistics and the goodbye, closed the socket,
+and then waited up to 3 s for the accept thread. The writes are ordinary blocking writes on a local
+socket whose send timeout is the 5 s keepalive value. They return at once while the socket's buffer
+has room, which is why nothing was ever seen to stall, and they block when it is full, which is
+what a host that has stopped reading eventually produces. Worst case the UI thread could have waited
+for a lock held by the statistics timer in its own blocked write, then 5 s for each of two writes,
+then the 3 s join. That was not reproduced on the device: freezing the host for a few seconds does
+not fill the buffers. It is a defect by construction, not by observation.
+
+The fix is the smallest that removes the wait: `stop()` marks the session stopped and returns, and a
+thread of its own does the rest. The goodbye is given 500 ms; then the socket is closed regardless,
+and closing it is what releases a write that is stuck, on any thread. Because the old session may
+now still be finishing when the screen is opened again, taking the socket's name is retried for up
+to 2 s instead of failing at once.
+
+On the tablet, with the build that has the change (`h1` to `h3`, 720p30):
+
+| Check | Result |
+| --- | --- |
+| Back key with a healthy host | The host still received the goodbye and ended "the client ended the session"; all 260 frames it sent were received. The launcher was in front 0.7 s after the key. |
+| Back, then the screen opened again immediately, then a stream | Listened and streamed: 241 frames sent and received. |
+| Back with the host process frozen | The launcher was in front 0.7 s after the key. When the host was resumed 3 s later it found the goodbye waiting and ended in an orderly way. |
+| Through all three | No crash, no "application not responding", no skipped-frame warning for the app. |
+
+### Is it reliable enough for the next architecture phase?
+
+For moving this code out of the experiment and behind the session coordinator and the connection
+controller: **yes, as a starting point, with three things carried along rather than left behind.**
+
+What supports that: with a real source the pipeline held its target for ten minutes without losing
+a frame or drifting; it survived an actual cable pull and came back unaided; the lifecycle defects
+found were small, specific and now tested; and the latency someone would see was measured once and
+is about 46 ms.
+
+What has to be dealt with first, in this order:
+
+1. **The capture starvation.** A mirror that can silently show a still picture while video plays is
+   a product-level fault, and its trigger is unknown. It needs the presentation trace described
+   under D before Mirror mode is called working, and probably a fallback (Desktop Duplication, or
+   detecting the condition) once it is understood.
+2. **Nothing further on the silent link.** The timeouts were exercised on the device on both sides
+   in the audit, and the live screen's stop path, which used to do its socket writes on the UI
+   thread, was moved off it in the final review. What still runs on the UI thread is releasing the
+   decoder when its surface goes away, which has to finish before the surface does.
+3. **A longer soak**, thirty minutes to an hour, with the tablet's memory and temperature recorded,
+   before anyone depends on the ten-minute result.
+
+Not blockers, but decisions the next phase will have to make: what to do about frame pacing when
+the monitor's rate is not a multiple of the stream's, and whether 46 ms is the target or the
+starting point.
+
 ## Prerequisites
 
 | Prerequisite | State on the development machine |
@@ -1227,20 +1866,26 @@ controller on Android, with the host choosing a configuration from the client's 
 
 ## What counts as success
 
-For the whole experiment. Where each stands after step 3:
+For the whole experiment. Where each stood after step 3, and then after Phase 2.4:
 
 - The Android screen shows the live Windows desktop, recognisably and continuously, for ten minutes
   without a crash, a freeze or unbounded memory growth on either side.
   **Not met.** Three minutes at 1080p and two at 720p, without a crash or a lost frame. Ten minutes
   was not attempted, and memory on the tablet was not measured.
+  *Phase 2.4:* **met** for one ten-minute run at 1080p60: no crash, no freeze, no lost frame; host
+  memory grew by about 5 MiB and the tablet app's moved between 175 and 205 MB without a trend.
 - Unplugging the cable ends both sides cleanly; replugging and restarting works without restarting
   the apps.
   **Not tested as written.** The app being killed and restarted was: the host reconnected by itself
   and the stream resumed. The cable was not pulled.
+  *Phase 2.4:* **met**, after a fix. The cable was pulled twice during a stream. Both sides noticed
+  within 40 ms; with the cable back inside the reconnect budget the stream resumed unaided, and
+  outside it the host ended with a clear failure and a fresh host worked against the same app.
 - Rotating the device or backgrounding the app and returning recovers the picture (keyframe request
   after the surface is recreated).
   **Met for backgrounding**, with the `surface_recreated` keyframe request seen in the host's log.
   Rotation was not tried.
+  *Phase 2.4:* unchanged. Rotation is still untried.
 - The run records which encoder and decoder were actually used. Until that line says "hardware",
   nothing may be described as hardware-accelerated.
   **Met.** Every report names both; in the sustained runs both were hardware.
@@ -1262,6 +1907,11 @@ later targets are set against.
 | Transport round trip | `ping`/`pong`. | Not applicable. | Measured: best 2.2 to 4.5 ms. |
 | Capture → released to the tablet's surface | Host timestamp in each frame, clocks related by `ping`/`pong`. Added in step 3. | Not applicable. | Measured: mean 15.7 ms at 720p30, 19.0 ms at 1080p60, ± half a round trip. |
 | **Glass-to-glass latency** | Display a running millisecond counter on the Windows monitor, photograph or film the monitor and the phone together with a high-frame-rate camera, and subtract. This is the only measurement that includes capture, display scan-out and panel delay, and the only one to quote. | Not measurable until step 3. | **Not measured.** No camera was used. |
+
+Phase 2.4 added to this table: the internal figure over ten minutes at 1080p60 (mean 19.7 ms), and
+a first glass-to-glass measurement from one 120 fps camera clip, a median of 45.7 ms at 1080p60.
+The pattern's stepping cell was used rather than its millisecond counter, because blended digits
+could not be read reliably; see [workstream E](#e-glass-to-glass-latency).
 
 Per-stage timings locate a problem; only the camera measurement says how the product feels.
 
@@ -1286,7 +1936,10 @@ Only "how do I get a connected, authenticated byte stream" may know that ADB exi
    border is really gone has not been confirmed by eye. Step 3 adds two cautions: the capture API's
    own rate limit rounds to whole refreshes, so the experiment now paces frames itself, and capture
    delivered nothing during one full-screen video (unexplained; see
-   [step 3](#an-observation-about-capture-unexplained)).
+   [step 3](#an-observation-about-capture-unexplained)). Phase 2.4 saw the capture API starve
+   again, in 4 of 17 identical full-screen browser runs, and showed that it is Windows raising
+   no events rather than this program discarding frames; the cause is still unknown
+   ([workstream D](#d-the-full-screen-capture-freeze)).
 2. Which interop approach to Media Foundation is workable from C#?
    **Answered for the experiment:** CsWin32; see [Interop findings](#interop-findings).
 3. What is the baseline glass-to-glass latency over ADB, and which stage dominates it?
@@ -1295,6 +1948,8 @@ Only "how do I get a connected, authenticated byte stream" may know that ADB exi
    and of that the tablet's receive-to-release stage was the largest part (11 to 14 ms), against
    1.4 to 2.2 ms to encode and about 3 ms in transit. The stages outside that interval, the two
    displays above all, may well be larger than everything inside it.
+   **Phase 2.4, one camera clip:** about 46 ms from the monitor's glass to the tablet's at 1080p60,
+   of which the measured pipeline is about 20 ms. So the displays are indeed the larger part.
 4. Is one TCP stream over ADB adequate at the bitrates needed, or does throughput cap quality?
    **Adequate at what was tried.** Up to 11.6 Mbit/s on average, with seconds of 20 to 29 Mbit/s,
    crossed in about 3 ms with the send queue never deeper than one frame. Higher bitrates, larger

@@ -97,6 +97,9 @@ internal class LiveSession(
     @Volatile private var stopped = true
     @Volatile private var surface: Surface? = null
     @Volatile private var decoderFailure: String? = null
+
+    /** When bytes last arrived from the host, so that a loss can be logged with how long it took to notice. */
+    @Volatile private var lastReadNanos = 0L
     private var acceptThread: Thread? = null
     private var server: LocalServerSocket? = null
     private var connection: LocalSocket? = null
@@ -135,22 +138,40 @@ internal class LiveSession(
         }
     }
 
-    /** Says goodbye if connected, stops listening and releases everything. Returns when that is done. */
+    /**
+     * Ends the session: says goodbye if connected, stops listening and releases everything. Safe to
+     * call more than once and from the UI thread. It returns at once; the work is done on a thread
+     * of its own, because every part of it can wait on the other device. A write to a host that has
+     * stopped reading blocks for the socket's five-second timeout, and this used to be called
+     * straight from the UI thread when the screen was closed.
+     */
     fun stop() {
-        val thread: Thread?
+        val accepting: Thread?
         synchronized(stateLock) {
             if (stopped) return
             stopped = true
-            thread = acceptThread
+            accepting = acceptThread
             acceptThread = null
         }
 
-        // The counters as they stand, so that the host's totals do not stop at the last one-second report.
-        if (snapshotStatus().phase == LivePhase.Streaming) trySend(currentStats(null, null))
-        trySend(Bye("the live screen was closed on the device"))
-        closeConnection()
+        Thread({ shutDown(accepting) }, "extendspace-live-stop").start()
+    }
+
+    /** Runs on the stop thread, once. */
+    private fun shutDown(accepting: Thread?) {
+        val wasStreaming = snapshotStatus().phase == LivePhase.Streaming
+        sayGoodbyeThenClose(
+            budgetMillis = GOODBYE_BUDGET_MS,
+            goodbye = {
+                // The counters as they stand, so that the host's totals do not stop at the last one-second report.
+                if (wasStreaming) trySend(currentStats(null, null))
+                trySend(Bye("the live screen was closed on the device"))
+            },
+            // Closing is also what frees a write that is stuck, the goodbye's or the statistics timer's.
+            close = ::closeConnection,
+        )
         wakeAccept()
-        thread?.join(TimeUnit.SECONDS.toMillis(3))
+        accepting?.join(TimeUnit.SECONDS.toMillis(3))
         publish { it.copy(phase = LivePhase.Stopped, detail = "Not listening.") }
     }
 
@@ -165,7 +186,9 @@ internal class LiveSession(
 
     private fun acceptLoop() {
         val listening = try {
-            LocalServerSocket(Protocol.LOCAL_SOCKET_NAME)
+            // A session that was stopped a moment ago finishes on its own thread and may still hold
+            // the name; give it the time its goodbye is allowed, and a little more.
+            retryOnIoFailure(BIND_ATTEMPTS, BIND_PAUSE_MS, keepTrying = { !stopped }) { LocalServerSocket(Protocol.LOCAL_SOCKET_NAME) }
         } catch (exception: IOException) {
             publish {
                 it.copy(
@@ -230,7 +253,8 @@ internal class LiveSession(
             publish { LiveStatus(phase = LivePhase.Negotiating, detail = "A host connected; handshake in progress.", connections = it.connections + 1, disconnects = it.disconnects, rejectedPeers = it.rejectedPeers, problems = it.problems) }
 
             socket.soTimeout = Protocol.HANDSHAKE_STEP_TIMEOUT_MS
-            val reader = ConnectionReader(socket.inputStream)
+            lastReadNanos = System.nanoTime()
+            val reader = ConnectionReader(socket.inputStream) { lastReadNanos = System.nanoTime() }
             val config = handshake(reader)
 
             socket.soTimeout = Protocol.KEEPALIVE_TIMEOUT_MS
@@ -241,15 +265,26 @@ internal class LiveSession(
             ending = "The host broke the protocol (${exception.code}): ${exception.message}"
             trySend(ErrorMessage(exception.code, exception.message.orEmpty(), fatal = true))
         } catch (exception: IOException) {
-            ending = if (stopped) "Stopped." else "The connection to the host was lost: ${exception.message ?: exception.javaClass.simpleName}."
+            ending = if (stopped) {
+                "Stopped."
+            } else {
+                // The handshake and the keepalive timeouts are the same length, so one figure serves both.
+                describeLostConnection(
+                    quietMillis = (System.nanoTime() - lastReadNanos) / NANOS_PER_MILLI,
+                    timeoutMillis = Protocol.KEEPALIVE_TIMEOUT_MS,
+                    cause = exception.message ?: exception.javaClass.simpleName,
+                )
+            }
         } catch (exception: RuntimeException) {
             ending = "An internal error ended the connection: ${exception.javaClass.simpleName}: ${exception.message}"
             trySend(ErrorMessage(ErrorCode.INTERNAL_ERROR, ending, fatal = true))
             Log.e(LOG_TAG, ending, exception)
         } finally {
+            val quietMillis = (System.nanoTime() - lastReadNanos) / NANOS_PER_MILLI
             stopStatsTimer()
             closeConnection()
             releaseDecoder()
+            Log.i(LOG_TAG, "Connection ended $quietMillis ms after the last bytes from the host arrived: $ending")
             Log.i(LOG_TAG, LiveSummary.format(snapshotStatus().copy(detail = ending, stats = currentStats(null, null))))
             publish { it.copy(phase = LivePhase.Listening, detail = "$ending Listening again.", disconnects = it.disconnects + 1, stats = currentStats(null, null)) }
         }
@@ -341,7 +376,7 @@ internal class LiveSession(
         }
 
         while (ending == null) {
-            if (!reader.readInto(handler)) return "The host closed the connection without saying goodbye."
+            if (!reader.readInto(handler)) return describeEndOfInput(stopped)
         }
         return ending ?: "The connection ended."
     }
@@ -611,7 +646,7 @@ internal class LiveSession(
     }
 
     /** Reads from the connection in whatever pieces arrive and feeds the frame parser. */
-    private class ConnectionReader(private val input: InputStream) {
+    private class ConnectionReader(private val input: InputStream, private val onBytes: () -> Unit) {
         private val parser = FrameParser()
         private val buffer = ByteArray(64 * 1024)
 
@@ -619,6 +654,7 @@ internal class LiveSession(
         fun readInto(handler: (FrameHeader, ByteArray, Int) -> Unit): Boolean {
             val read = input.read(buffer)
             if (read < 0) return false
+            onBytes()
             parser.append(buffer, 0, read) { header, payload, length -> handler(header, payload, length) }
             return true
         }
@@ -652,7 +688,13 @@ internal class LiveSession(
         const val LOG_TAG = "ExtendSpaceLive"
         private const val LISTENING = "Listening on the local socket; waiting for the Windows host to connect through adb."
         private const val MAX_PROBLEMS = 6
+
+        /** How long a goodbye may take before the connection is closed regardless. */
+        private const val GOODBYE_BUDGET_MS = 500L
+        private const val BIND_ATTEMPTS = 20
+        private const val BIND_PAUSE_MS = 100L
         private const val NANOS_PER_MICRO = 1_000L
+        private const val NANOS_PER_MILLI = 1_000_000L
 
         // Android's fixed user IDs for the adb shell user and for root (system/core android_filesystem_config.h).
         private const val UID_ROOT = 0

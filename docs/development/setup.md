@@ -28,7 +28,8 @@ dotnet build ExtendSpace.slnx
 dotnet test --solution ExtendSpace.slnx
 dotnet run --project src/ExtendSpace.Host
 
-# Capture-and-encode experiment: writes a .h264 file of the primary monitor, or streams it to a device
+# Capture-and-encode experiment: writes a .h264 file of the primary monitor, or streams it to a
+# device; also shows a test pattern (pattern) and reports what capture delivers (probe)
 dotnet run --project experiments/ExtendSpace.Experiments.CaptureEncode -- --help
 ```
 
@@ -175,6 +176,23 @@ Live stream over `adb forward`, 2026-10-13:
 | `adb install -r app-debug.apk` on the Xiaomi Pad 7 | Succeeded |
 | `ExtendSpace.CaptureEncode.exe stream …` to the tablet, nine kept runs | A live picture on the tablet in every run that had a client; no frame lost in the sustained runs; reconnection after the app was killed. Figures and limits are in [experiment 01](../architecture/streaming-experiment-01.md#step-3--live-stream-over-adb-forward). |
 | The app's own screens on the tablet | **Still not exercised.** |
+
+Reliability and latency validation (Phase 2.4), 2026-10-13:
+
+| Command | Result |
+| --- | --- |
+| `dotnet build ExtendSpace.slnx`, `dotnet test --solution ExtendSpace.slnx`, before any change | 0 warnings, 0 errors; 299 passed |
+| The same, after | 0 warnings, 0 errors; 355 passed, 0 failed, 0 skipped: 24 for the app's core, 331 for the experiment |
+| `git diff --check` | Clean |
+| `gradlew assembleDebug testDebugUnitTest lintDebug` | Succeeded; 91 tests passed, 0 failed (82 before); lint 0 errors, 1 warning |
+| `gradlew assembleRelease` | Succeeded; neither debug screen and no `org.json` artifact in the release APK |
+| `ExtendSpace.CaptureEncode.exe stream …` to the tablet, with the new `pattern` command as the source | 1080p60 for 180 s and for 600 s without a lost frame; recovery from two real cable pulls. Figures and limits are in [experiment 01](../architecture/streaming-experiment-01.md#phase-24--reliability-and-latency-validation). |
+| Final debug APK on the tablet | Installed and run: a 30 s 1080p60 stream, a stream ended from the tablet, a silent link on each side, and leaving the live screen with the host healthy and frozen. The soak, the cable pulls and the camera clip are from an earlier build of the same day. |
+| The app's own screens on the tablet | **Still not exercised.** |
+
+When more than one device is attached to adb (an emulator, say), `stream` needs `--device <serial>`
+and plain `adb` commands need `-s <serial>`. `adb reconnect` left the tablet absent from adb here
+until the adb server was restarted; avoid it as a way to simulate a disconnection.
 
 Remaining warning: Android lint reports that Gradle 9.8.1 is available; the wrapper stays on 9.7.1,
 the version already cached on this machine.

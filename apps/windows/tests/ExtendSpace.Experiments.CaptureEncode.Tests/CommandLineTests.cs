@@ -231,6 +231,95 @@ public class CommandLineTests
     }
 
     [Fact]
+    public void Probe_takes_the_capture_options_and_encodes_unless_told_not_to()
+    {
+        ParsedCommand command = CommandLine.Parse(["probe", "--monitor", "1", "--output-size", "1920x1080", "--fps", "60", "--duration", "45"]);
+
+        Assert.Equal(CommandKind.Probe, command.Kind);
+        Assert.Equal(1, command.Options.MonitorIndex);
+        Assert.Equal((1920, 1080), command.Options.OutputSize);
+        Assert.Equal(TimeSpan.FromSeconds(45), command.Options.Duration);
+        Assert.True(command.ProbeEncodes);
+        Assert.False(CommandLine.Parse(["probe", "--no-encode"]).ProbeEncodes);
+    }
+
+    [Theory]
+    [InlineData("--output", "clip.h264")]
+    [InlineData("--max-frames", "10")]
+    [InlineData("--port", "30000")]
+    [InlineData("--size", "1280x720")]
+    [InlineData("--duration", "601")]
+    public void Probe_keeps_nothing_and_sends_nothing_so_it_refuses_the_options_that_would(string option, string value)
+    {
+        Assert.Throws<UsageException>(() => CommandLine.Parse(["probe", option, value]));
+    }
+
+    [Fact]
+    public void Pattern_defaults_to_a_1080p_flip_model_window_on_every_refresh_until_closed()
+    {
+        ParsedCommand command = CommandLine.Parse(["pattern"]);
+
+        Assert.Equal(CommandKind.Pattern, command.Kind);
+        Assert.Equal((1920, 1080), command.Pattern.Size);
+        Assert.False(command.Pattern.FullScreen);
+        Assert.Equal(PresentModel.Flip, command.Pattern.Model);
+        Assert.Equal(1, command.Pattern.SyncInterval);
+        Assert.True(command.Pattern.Topmost);
+        Assert.Null(command.PatternDuration);
+        Assert.Null(command.Options.MonitorIndex);
+    }
+
+    [Fact]
+    public void Pattern_reads_its_options_and_may_outlast_a_capture()
+    {
+        ParsedCommand command = CommandLine.Parse(
+            ["pattern", "--monitor", "1", "--duration", "700", "--size", "1280x720", "--fullscreen", "--model", "blt", "--sync-interval", "2", "--no-topmost"]);
+
+        Assert.Equal(1, command.Options.MonitorIndex);
+        Assert.Equal(TimeSpan.FromSeconds(700), command.PatternDuration);
+        Assert.Equal((1280, 720), command.Pattern.Size);
+        Assert.True(command.Pattern.FullScreen);
+        Assert.Equal(PresentModel.Blt, command.Pattern.Model);
+        Assert.Equal(2, command.Pattern.SyncInterval);
+        Assert.False(command.Pattern.Topmost);
+    }
+
+    [Theory]
+    [InlineData("--fps", "60")]
+    [InlineData("--bitrate", "6M")]
+    [InlineData("--output", "clip.h264")]
+    [InlineData("--port", "30000")]
+    [InlineData("--model", "overlay")]
+    [InlineData("--sync-interval", "0")]
+    [InlineData("--sync-interval", "5")]
+    [InlineData("--size", "1921x1080")]
+    [InlineData("--duration", "3601")]
+    public void Pattern_refuses_capture_options_and_bad_values(string option, string value)
+    {
+        Assert.Throws<UsageException>(() => CommandLine.Parse(["pattern", option, value]));
+    }
+
+    [Theory]
+    [InlineData("--size", "1280x720")]
+    [InlineData("--model", "blt")]
+    [InlineData("--sync-interval", "2")]
+    public void Pattern_options_are_refused_by_the_other_commands(string option, string value)
+    {
+        Assert.Throws<UsageException>(() => CommandLine.Parse(["capture", option, value]));
+        Assert.Throws<UsageException>(() => CommandLine.Parse(["stream", option, value]));
+        Assert.Throws<UsageException>(() => CommandLine.Parse(["stream", "--fullscreen"]));
+        Assert.Throws<UsageException>(() => CommandLine.Parse(["capture", "--no-encode"]));
+    }
+
+    [Fact]
+    public void A_capture_or_a_stream_is_still_limited_to_ten_minutes()
+    {
+        Assert.Equal(TimeSpan.FromSeconds(600), CommandLine.Parse(["stream", "--duration", "600"]).Options.Duration);
+        UsageException refused = Assert.Throws<UsageException>(() => CommandLine.Parse(["stream", "--duration", "700"]));
+        Assert.Contains("from 0.5 to 600", refused.Message);
+    }
+
+    [Fact]
     public void The_help_text_documents_every_option_the_parser_accepts()
     {
         string[] options =
@@ -238,6 +327,7 @@ public class CommandLineTests
             "--monitor", "--duration", "--max-frames", "--fps", "--output-size", "--bitrate", "--gop-seconds",
             "--profile", "--encoder", "--output", "--no-cursor", "--no-border", "--default-timer",
             "--port", "--device", "--adb", "--no-adb-forward", "--reconnect-seconds",
+            "--no-encode", "--size", "--fullscreen", "--model", "--sync-interval", "--no-topmost",
         ];
 
         Assert.All(options, option => Assert.Contains(option, CommandLine.HelpText));

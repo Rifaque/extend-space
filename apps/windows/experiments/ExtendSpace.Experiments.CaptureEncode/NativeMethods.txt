@@ -2,6 +2,7 @@
 
 // Monitors
 EnumDisplayMonitors
+EnumDisplaySettings
 GetMonitorInfo
 MONITORINFOEXW
 MONITORINFOF_PRIMARY
@@ -120,3 +121,28 @@ MF_E_SHUTDOWN
 MF_E_SAMPLEALLOCATOR_EMPTY
 S_OK
 CoTaskMemFree
+
+// Test pattern window (the 'pattern' command)
+RegisterClassEx
+UnregisterClass
+CreateWindowEx
+DestroyWindow
+DefWindowProc
+ShowWindow
+PeekMessage
+TranslateMessage
+DispatchMessage
+PostQuitMessage
+LoadCursor
+IDC_ARROW
+WM_DESTROY
+WM_KEYDOWN
+WM_RBUTTONUP
+WM_QUIT
+VIRTUAL_KEY
+IDXGIFactory2
+IDXGISwapChain1
+ID3D11DeviceContext1
+ID3D11RenderTargetView
+DXGI_SWAP_CHAIN_DESC1
+DXGI_PRESENT

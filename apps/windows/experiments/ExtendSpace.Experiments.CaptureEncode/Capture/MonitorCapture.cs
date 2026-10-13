@@ -23,7 +23,17 @@ internal sealed record CaptureCounters(
     long ReplacedBeforeTaken,
     long DiscardedAtStop,
     TimeSpan? FirstFrameTime,
-    TimeSpan? LastFrameTime);
+    TimeSpan? LastFrameTime)
+{
+    /// <summary>Times Windows raised the frame-arrived event, whether or not a frame was there to take.</summary>
+    public long Callbacks { get; init; }
+
+    /// <summary>Of those, the times the frame pool had no frame to give.</summary>
+    public long EmptyCallbacks { get; init; }
+
+    /// <summary>The <see cref="Stopwatch"/> timestamp of the newest delivered frame; null before the first.</summary>
+    public long? LastArrival { get; init; }
+}
 
 /// <summary>
 /// Captures one monitor with Windows.Graphics.Capture and keeps only the newest accepted frame for
@@ -56,6 +66,9 @@ internal sealed class MonitorCapture : IDisposable
     private bool _running;
     private string? _failure;
 
+    private long _callbacks;
+    private long _emptyCallbacks;
+    private long? _lastArrival;
     private long _delivered;
     private long _skippedByPacer;
     private long _replaced;
@@ -172,7 +185,12 @@ internal sealed class MonitorCapture : IDisposable
         {
             lock (_gate)
             {
-                return new(_delivered, _skippedByPacer, _replaced, _discardedAtStop, _firstFrameTime, _lastFrameTime);
+                return new(_delivered, _skippedByPacer, _replaced, _discardedAtStop, _firstFrameTime, _lastFrameTime)
+                {
+                    Callbacks = _callbacks,
+                    EmptyCallbacks = _emptyCallbacks,
+                    LastArrival = _lastArrival,
+                };
             }
         }
     }
@@ -328,13 +346,16 @@ internal sealed class MonitorCapture : IDisposable
                     return;
                 }
 
+                _callbacks++;
                 Direct3D11CaptureFrame? frame = sender.TryGetNextFrame();
                 if (frame is null)
                 {
+                    _emptyCallbacks++;
                     return;
                 }
 
                 long arrival = Stopwatch.GetTimestamp();
+                _lastArrival = arrival;
                 _delivered++;
                 TimeSpan time = frame.SystemRelativeTime;
                 _deliveryDelays.Add(Stopwatch.GetElapsedTime(0, arrival) - time);

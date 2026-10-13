@@ -83,10 +83,40 @@ internal sealed record StreamOptions
     public TimeSpan ReconnectBudget { get; init; } = Streaming.ReconnectBackoff.DefaultBudget;
 }
 
+/// <summary>How the test pattern's window hands its pictures to Windows.</summary>
+internal enum PresentModel
+{
+    /// <summary>A flip-model swap chain, as games and video players use. Windows may show it without composing it.</summary>
+    Flip,
+
+    /// <summary>A blt-model swap chain: every picture is copied through the desktop compositor.</summary>
+    Blt,
+}
+
+/// <summary>What the pattern command needs. It shares --monitor and --duration with the others.</summary>
+internal sealed record PatternOptions
+{
+    /// <summary>The window's size in pixels; it is centred on the monitor.</summary>
+    public (int Width, int Height) Size { get; init; } = (1920, 1080);
+
+    /// <summary>Cover the whole monitor instead of using <see cref="Size"/>.</summary>
+    public bool FullScreen { get; init; }
+
+    public PresentModel Model { get; init; } = PresentModel.Flip;
+
+    /// <summary>Present on every n-th display refresh.</summary>
+    public int SyncInterval { get; init; } = 1;
+
+    /// <summary>Keep the window above others, so that it cannot be covered and stop being a source.</summary>
+    public bool Topmost { get; init; } = true;
+}
+
 internal enum CommandKind
 {
     Capture,
     Stream,
+    Probe,
+    Pattern,
     List,
     Help,
 }
@@ -94,6 +124,14 @@ internal enum CommandKind
 internal sealed record ParsedCommand(CommandKind Kind, CaptureOptions Options)
 {
     public StreamOptions Stream { get; init; } = new();
+
+    public PatternOptions Pattern { get; init; } = new();
+
+    /// <summary>For 'probe': false counts frames without encoding them (--no-encode).</summary>
+    public bool ProbeEncodes { get; init; } = true;
+
+    /// <summary>For 'pattern': null runs until the window is closed.</summary>
+    public TimeSpan? PatternDuration { get; init; }
 }
 
 internal sealed class UsageException(string message) : Exception(message);
@@ -109,6 +147,8 @@ internal static class CommandLine
         Usage:
           ExtendSpace.CaptureEncode [capture] [options]
           ExtendSpace.CaptureEncode stream [options]
+          ExtendSpace.CaptureEncode probe [options]
+          ExtendSpace.CaptureEncode pattern [options]
           ExtendSpace.CaptureEncode list
           ExtendSpace.CaptureEncode --help
 
@@ -116,6 +156,12 @@ internal static class CommandLine
           capture             Capture to a .h264 file (default).
           stream              Capture and send live to the ExtendSpace Android app over USB, through
                               an adb port forward. Open the app's live screen on the device first.
+          probe               Capture and encode as 'stream' does, but send nothing and keep nothing:
+                              print each second what the capture API delivered. For finding out
+                              whether Windows has stopped delivering frames.
+          pattern             Show an animated test pattern that presents a new picture on every
+                              display refresh, with a millisecond clock and a frame counter. A
+                              controlled source for the other commands; it captures nothing.
           list                Print the monitors, the graphics adapter and the H.264 encoders found.
 
         Options:
@@ -146,6 +192,19 @@ internal static class CommandLine
           --reconnect-seconds <n>   Give up if the connection cannot be opened, or re-opened after a
                                     loss, within this many seconds, 1 to 600. Default: 30.
 
+        Options for 'probe' only (it takes the capture options too, except --output and --max-frames):
+          --no-encode               Count the frames and release them without encoding.
+
+        Options for 'pattern' only (it also takes --monitor, and --duration up to 3600; without
+        --duration it runs until closed with Esc, a right-click on it, or Ctrl+C):
+          --size <WxH>              Window size in pixels, centred on the monitor. Default: 1920x1080.
+          --fullscreen              Cover the whole monitor instead.
+          --model <flip|blt>        How the window presents. flip (the default) is what games and
+                                    video players use, and Windows may put it on screen without
+                                    composing it. blt is always copied through the compositor.
+          --sync-interval <n>       Present on every n-th display refresh, 1 to 4. Default: 1.
+          --no-topmost              Let other windows cover the pattern.
+
         Ctrl+C or Ctrl+Break stops the capture early; the stream is still drained and the file finalised.
         Exit codes: 0 success, 1 the run failed, 2 invalid arguments.
         """;
@@ -155,6 +214,10 @@ internal static class CommandLine
         CommandKind kind = CommandKind.Capture;
         var options = new CaptureOptions();
         var stream = new StreamOptions();
+        var pattern = new PatternOptions();
+        var given = new List<string>();
+        bool probeEncodes = true;
+        string durationText = string.Empty;
         int index = 0;
 
         if (args.Count > 0 && !args[0].StartsWith('-'))
@@ -163,6 +226,8 @@ internal static class CommandLine
             {
                 "capture" => CommandKind.Capture,
                 "stream" => CommandKind.Stream,
+                "probe" => CommandKind.Probe,
+                "pattern" => CommandKind.Pattern,
                 "list" => CommandKind.List,
                 "help" => CommandKind.Help,
                 _ => throw new UsageException($"Unknown command '{args[0]}'."),
@@ -177,6 +242,7 @@ internal static class CommandLine
                 ? args[index++]
                 : throw new UsageException($"Option '{name}' needs a value.");
 
+            given.Add(name);
             switch (name)
             {
                 case "-h" or "--help" or "-?" or "/?":
@@ -185,7 +251,28 @@ internal static class CommandLine
                     options = options with { MonitorIndex = ParseInt(name, Value(), 0, 63) };
                     break;
                 case "--duration":
-                    options = options with { Duration = TimeSpan.FromSeconds(ParseDouble(name, Value(), 0.5, 600)) };
+                    // The pattern may run longer than anything is captured for: it has to be there
+                    // before a capture starts and after it ends.
+                    durationText = Value();
+                    options = options with { Duration = TimeSpan.FromSeconds(ParseDouble(name, durationText, 0.5, MaximumPatternSeconds)) };
+                    break;
+                case "--no-encode":
+                    probeEncodes = false;
+                    break;
+                case "--size":
+                    pattern = pattern with { Size = ParseSize(name, Value()) };
+                    break;
+                case "--fullscreen":
+                    pattern = pattern with { FullScreen = true };
+                    break;
+                case "--model":
+                    pattern = pattern with { Model = ParseEnum<PresentModel>(name, Value()) };
+                    break;
+                case "--sync-interval":
+                    pattern = pattern with { SyncInterval = ParseInt(name, Value(), 1, 4) };
+                    break;
+                case "--no-topmost":
+                    pattern = pattern with { Topmost = false };
                     break;
                 case "--max-frames":
                     options = options with { MaxFrames = ParseInt(name, Value(), 1, 1_000_000) };
@@ -245,13 +332,52 @@ internal static class CommandLine
             throw new UsageException("'stream' sends video to the device; it takes neither --output nor --max-frames.");
         }
 
+        if (kind == CommandKind.Probe && (options.OutputPath is not null || options.MaxFrames is not null))
+        {
+            throw new UsageException("'probe' keeps nothing; it takes neither --output nor --max-frames.");
+        }
+
         if (kind != CommandKind.Stream && stream != new StreamOptions())
         {
             throw new UsageException("--port, --device, --adb, --no-adb-forward and --reconnect-seconds only apply to 'stream'.");
         }
 
-        return new ParsedCommand(kind, options) { Stream = stream };
+        if (kind != CommandKind.Probe && !probeEncodes)
+        {
+            throw new UsageException("--no-encode only applies to 'probe'.");
+        }
+
+        if (kind != CommandKind.Pattern && pattern != new PatternOptions())
+        {
+            throw new UsageException("--size, --fullscreen, --model, --sync-interval and --no-topmost only apply to 'pattern'.");
+        }
+
+        if (kind == CommandKind.Pattern && given.FirstOrDefault(option => !PatternOptionNames.Contains(option)) is { } foreign)
+        {
+            throw new UsageException($"'pattern' shows a picture and captures nothing; it does not take '{foreign}'.");
+        }
+
+        if (kind != CommandKind.Pattern && options.Duration > TimeSpan.FromSeconds(MaximumCaptureSeconds))
+        {
+            throw new UsageException(string.Create(
+                CultureInfo.InvariantCulture,
+                $"Option '--duration' must be a number from 0.5 to {MaximumCaptureSeconds}; got '{durationText}'."));
+        }
+
+        return new ParsedCommand(kind, options)
+        {
+            Stream = stream,
+            Pattern = pattern,
+            ProbeEncodes = probeEncodes,
+            PatternDuration = kind == CommandKind.Pattern && given.Contains("--duration") ? options.Duration : null,
+        };
     }
+
+    private const int MaximumCaptureSeconds = 600;
+    private const int MaximumPatternSeconds = 3600;
+
+    private static readonly string[] PatternOptionNames =
+        ["--monitor", "--duration", "--size", "--fullscreen", "--model", "--sync-interval", "--no-topmost"];
 
     /// <summary>An adb serial goes onto a command line, so it is held to the characters serials are made of.</summary>
     private static string ParseSerial(string name, string text)

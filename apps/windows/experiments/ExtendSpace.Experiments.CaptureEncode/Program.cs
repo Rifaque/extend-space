@@ -2,6 +2,7 @@ using System.Text;
 using ExtendSpace.Experiments.CaptureEncode.Capture;
 using ExtendSpace.Experiments.CaptureEncode.Encoding;
 using ExtendSpace.Experiments.CaptureEncode.Graphics;
+using ExtendSpace.Experiments.CaptureEncode.Pattern;
 using ExtendSpace.Experiments.CaptureEncode.Streaming;
 
 namespace ExtendSpace.Experiments.CaptureEncode;
@@ -40,6 +41,11 @@ internal static class Program
                 return List();
             case CommandKind.Stream:
                 return Stream(command.Options, command.Stream);
+            case CommandKind.Probe:
+                return RunCancellable(cancellation => new ProbeRunner(command.Options, command.ProbeEncodes, Console.Out).Run(cancellation));
+            case CommandKind.Pattern:
+                return RunCancellable(cancellation =>
+                    new PatternRunner(command.Pattern, command.Options.MonitorIndex, command.PatternDuration, Console.Out).Run(cancellation));
             default:
                 return Capture(command.Options);
         }
@@ -60,6 +66,35 @@ internal static class Program
         if (Console.IsErrorRedirected)
         {
             Console.SetError(new StreamWriter(Console.OpenStandardError(), utf8) { AutoFlush = true });
+        }
+    }
+
+    /// <summary>Runs something that the first Ctrl+C stops in an orderly way and that reports for itself.</summary>
+    private static int RunCancellable(Func<CancellationToken, bool> run)
+    {
+        using var cancellation = new CancellationTokenSource();
+        void OnCancelKey(object? sender, ConsoleCancelEventArgs e)
+        {
+            if (!cancellation.IsCancellationRequested)
+            {
+                e.Cancel = true;
+                cancellation.Cancel();
+            }
+        }
+
+        Console.CancelKeyPress += OnCancelKey;
+        try
+        {
+            return run(cancellation.Token) ? ExitSuccess : ExitFailed;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine($"Failed. {exception.GetType().Name}: {exception.Message.Trim()} (0x{exception.HResult:X8})");
+            return ExitFailed;
+        }
+        finally
+        {
+            Console.CancelKeyPress -= OnCancelKey;
         }
     }
 

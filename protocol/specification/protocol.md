@@ -265,6 +265,14 @@ partially applied, and never leaves capture, encoder or a virtual display runnin
 
 - The host enters `Reconnecting` and retries the transport with backoff starting at 250 ms and
   capped at 4 s, for at most 30 seconds in total, then gives up and the session becomes `Failed`.
+- "Retries the transport" includes setting the transport up again, not only connecting to it. Over
+  USB, adb removes its port forward when the device disconnects and does not restore it when the
+  device returns, so the host asks for the forward again before each new attempt. Measured with a
+  real cable pull: both ends saw the connection close within 40 ms, and the stream was back 3.3 s
+  after the cable was.
+- The client does nothing to reconnect. It returns to listening and serves whoever connects next,
+  one host at a time: a second host that connects while one is being served gets no reply and gives
+  up when its own budget is spent.
 - A re-established connection runs the complete handshake again. Nothing is resumed; the stream
   restarts with a `CONFIG | KEYFRAME` frame.
 - In Extend mode the virtual display stays attached during `Reconnecting` so windows do not jump to
@@ -352,12 +360,12 @@ without a test failing.
 | 4 Framing | Implemented on both sides, including every limit, checked before the payload is read. |
 | 5 Versioning | `hello` carries the range and a host or client with no common major version refuses. Only version 0 exists, so no real negotiation has happened. |
 | 6 Identity and pairing | Not implemented. `hello` carries no device ID. |
-| 7 Session lifecycle | Implemented in the experiment's own host session and client session, with the states of this section. The applications' session state machines are not connected to it. The handshake timeout closes the connection; it does not send a `timeout` error first. |
+| 7 Session lifecycle | Implemented in the experiment's own host session and client session, with the states of this section. The applications' session state machines are not connected to it. The handshake timeout closes the connection; it does not send a `timeout` error first. Stopping the host cancels a handshake in progress instead of waiting for it. |
 | 8 Capabilities and configuration | A minimal subset; see the note in that section. No reconfiguration during a stream. |
 | 9 Video delivery and backpressure | Implemented. The host's skip-before-encode path is used only while no client is streaming; when the send queue is full it drops encoded frames up to the next keyframe and forces one, which is the second-choice behaviour in this text. In every measured run the queue never held more than one frame, so that path has unit tests but has not run against a real device. |
 | 10 Keyframe requests | Implemented, including the rate limit. |
-| 11 Keepalive | Implemented, with the clock estimate described there. |
-| 12 Errors and reconnection | Host reconnection with backoff implemented and exercised. Malformed input ends the connection on both sides without a crash (unit-tested on both; not attacked on a device). The Extend-mode clause does not apply yet. |
+| 11 Keepalive | Implemented, with the clock estimate described there. The 5 s silence timeout is unit-tested on the host and was exercised on a device on both sides by freezing one process at a time with the socket left open: each side noticed after 5.0 s, closed, and the stream resumed when the frozen side came back. A pulled cable did not need it; that arrived as a closed connection. |
+| 12 Errors and reconnection | Host reconnection with backoff implemented and exercised, including across a pulled USB cable, where it restores the adb forward before retrying. Malformed input ends the connection on both sides without a crash (unit-tested on both; not attacked on a device). The Extend-mode clause does not apply yet. |
 | 13 Input | Not implemented. |
 
 Where the implementation differs from the text above, the text has been changed to say so in place.

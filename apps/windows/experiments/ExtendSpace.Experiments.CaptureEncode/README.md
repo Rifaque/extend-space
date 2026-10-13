@@ -26,7 +26,19 @@ dotnet run --project experiments/ExtendSpace.Experiments.CaptureEncode -- stream
 
 The program runs `adb forward tcp:27183 localabstract:extendspace`, connects to that loopback port,
 and removes the forward when it stops. It opens no listening socket of its own. `adb` is found
-through `ANDROID_HOME` or `PATH`, or given with `--adb`.
+through `ANDROID_HOME` or `PATH`, or given with `--adb`. If the connection is lost it sets the
+forward up again and reconnects, for up to `--reconnect-seconds`.
+
+Two more commands help with measuring. Neither sends or keeps anything:
+
+```powershell
+# A test pattern that changes on every display refresh, with a millisecond clock and a frame
+# counter: a source that can be trusted. Esc or a right-click on it closes it.
+dotnet run --project experiments/ExtendSpace.Experiments.CaptureEncode -- pattern
+
+# What the capture API delivers each second, before and after this program's own pacing.
+dotnet run --project experiments/ExtendSpace.Experiments.CaptureEncode -- probe --duration 30 --output-size 1920x1080
+```
 
 To check a file with ffmpeg, if you have it:
 

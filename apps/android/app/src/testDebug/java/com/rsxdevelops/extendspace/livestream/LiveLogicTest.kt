@@ -218,5 +218,27 @@ class LiveLogicTest {
         assertFalse(summary.contains("null"))
     }
 
+    @Test
+    fun `input that ends is blamed on the host only when this side did not close it`() {
+        assertEquals("The host closed the connection without saying goodbye.", describeEndOfInput(stoppedHere = false))
+        assertEquals("Stopped: the live screen was closed.", describeEndOfInput(stoppedHere = true))
+    }
+
+    @Test
+    fun `a read that fails after the timeout's worth of silence is reported as silence`() {
+        assertEquals(
+            "The connection to the host was lost: nothing arrived from it for 5 s.",
+            describeLostConnection(quietMillis = 5_029, timeoutMillis = 5_000, cause = "Try again"),
+        )
+        assertEquals(
+            "The connection to the host was lost: Connection reset by peer.",
+            describeLostConnection(quietMillis = 12, timeoutMillis = 5_000, cause = "Connection reset by peer"),
+        )
+        assertEquals(
+            "The connection to the host was lost: the read failed.",
+            describeLostConnection(quietMillis = 0, timeoutMillis = 5_000, cause = null),
+        )
+    }
+
     private fun startedGate() = VideoGate().apply { onFrame(0, keyframe, hasSurface = true) }
 }

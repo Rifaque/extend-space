@@ -63,13 +63,15 @@ internal sealed class ConnectionReader(Socket socket)
 
     /// <summary>Handshake step: the next message must be a <typeparamref name="T"/>.</summary>
     /// <exception cref="TimeoutException">It did not arrive in time.</exception>
+    /// <exception cref="OperationCanceledException">The wait was cancelled.</exception>
     /// <exception cref="ProtocolException">Something else arrived, or the client reported an error.</exception>
-    public T Expect<T>(TimeSpan timeout)
+    public T Expect<T>(TimeSpan timeout, CancellationToken cancellation = default)
         where T : class
     {
-        if (!TryNext(timeout, CancellationToken.None, out ReceivedFrame frame))
+        if (!TryNext(timeout, cancellation, out ReceivedFrame frame))
         {
-            throw new TimeoutException($"the client did not send its {typeof(T).Name} message within {timeout.TotalSeconds:0} s");
+            cancellation.ThrowIfCancellationRequested();
+            throw new TimeoutException($"the client did not send its {typeof(T).Name} message within {timeout.TotalSeconds:0.#} s");
         }
 
         if (frame.Header.Channel != Protocol.ChannelControl)

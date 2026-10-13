@@ -84,7 +84,11 @@ internal sealed class StreamRunner(CaptureOptions options, StreamOptions stream,
 
         string version = typeof(StreamRunner).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "0";
         session = new HostSession(
-            new HostSessionOptions(stream.Port, stream.ReconnectBudget, SendQueueCapacity, Environment.MachineName, version),
+            new HostSessionOptions(stream.Port, stream.ReconnectBudget, SendQueueCapacity, Environment.MachineName, version)
+            {
+                // With --no-adb-forward the forward is the user's, and so is putting it back.
+                RestoreTransport = forward is null ? null : forward.Restore,
+            },
             () => config,
             message => Log(report, message),
             wake.Set);

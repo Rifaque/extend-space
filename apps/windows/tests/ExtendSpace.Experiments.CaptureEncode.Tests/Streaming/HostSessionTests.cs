@@ -15,7 +15,7 @@ public sealed class HostSessionTests : IDisposable
     private static readonly TimeSpan Patience = TimeSpan.FromSeconds(10);
     private static readonly StreamConfig Config = new("h264", "high", 1280, 720, 30, 6_000_000, Protocol.MaxVideoPayload, "Test Encoder", "software");
 
-    private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
+    private TcpListener _listener = new(IPAddress.Loopback, 0);
     private readonly List<string> _log = [];
     private readonly List<IDisposable> _cleanup = [];
 
@@ -354,13 +354,359 @@ public sealed class HostSessionTests : IDisposable
         Assert.Contains(ErrorCode.MessageTooLarge, session.EndReason);
     }
 
+    [Fact]
+    public void Starting_a_session_twice_is_refused()
+    {
+        HostSession session = StartSession();
+
+        Assert.Throws<InvalidOperationException>(session.Start);
+    }
+
+    [Fact]
+    public void Stopping_before_anything_has_connected_ends_disconnected_at_once()
+    {
+        _listener.Stop();
+        HostSession session = StartSession();
+        WaitFor(() => Logged("not connected"));
+
+        long took = TimeToStop(session, "cancelled before a client appeared");
+
+        Assert.True(took < 1500, $"stopping took {took} ms");
+        Assert.Equal(SessionPhase.Disconnected, session.Phase);
+        Assert.Equal("cancelled before a client appeared", session.EndReason);
+        Assert.Equal(0, session.Counters.ConnectionsEstablished);
+    }
+
+    [Fact]
+    public void Stopping_while_a_handshake_is_stalled_does_not_wait_for_the_handshake_to_time_out()
+    {
+        HostSession session = StartSession();
+
+        // Something accepted the connection and then said nothing: the host is waiting for a hello.
+        using FakeClient silent = Accept();
+        WaitFor(() => session.Phase == SessionPhase.Negotiating);
+
+        long took = TimeToStop(session, "cancelled during the handshake");
+
+        Assert.True(took < 1500, $"stopping took {took} ms; the handshake step timeout is {Protocol.HandshakeStepTimeout.TotalSeconds:0} s");
+        Assert.Equal(SessionPhase.Disconnected, session.Phase);
+        Assert.Equal("cancelled during the handshake", session.EndReason);
+        Assert.Equal(0, session.Counters.ConnectionsEstablished);
+        silent.WaitUntilClosedByThePeer();
+    }
+
+    [Fact]
+    public void A_client_that_accepts_and_never_speaks_is_explained_as_possibly_busy_with_another_host()
+    {
+        HostSession session = StartSession(configure: options => options with { HandshakeStepTimeout = TimeSpan.FromMilliseconds(300) });
+
+        // What the Android app does to a second host while it is serving a first: the connection
+        // is made and then nothing comes.
+        using FakeClient busy = Accept();
+        busy.WaitUntilClosedByThePeer();
+
+        WaitFor(() => Logged("another stream may already be connected"));
+        Assert.Equal(0, session.Counters.ConnectionsEstablished);
+        Assert.False(session.HasEnded, "a busy client is retried until the budget is spent, not failed at once");
+    }
+
+    [Fact]
+    public void A_handshake_that_stalls_is_given_up_its_socket_closed_and_the_next_client_served()
+    {
+        HostSession session = StartSession(configure: options => options with { HandshakeStepTimeout = TimeSpan.FromMilliseconds(300) });
+        using (FakeClient stalled = Accept())
+        {
+            stalled.Send(Protocol.Preface.ToArray());
+            stalled.Send(new Hello(0, 0, "client", "Stalled Pad", "9.9"));
+
+            // No capabilities follow. The host must not keep this half-made connection.
+            stalled.WaitUntilClosedByThePeer();
+        }
+
+        Assert.False(session.IsStreaming);
+        using FakeClient client = Accept();
+        client.Handshake();
+        WaitFor(() => session.IsStreaming);
+
+        // A connection that never finished its handshake was neither established nor lost.
+        Assert.Equal((1, 0), (session.Counters.ConnectionsEstablished, session.Counters.ConnectionsLost));
+        Assert.Equal("Fake Pad", session.ClientHello?.DeviceName);
+    }
+
+    [Fact]
+    public void A_client_that_leaves_partway_through_the_handshake_is_retried_rather_than_fatal()
+    {
+        HostSession session = StartSession();
+        using (FakeClient leaver = Accept())
+        {
+            leaver.Send(Protocol.Preface.ToArray());
+            leaver.Send(new Hello(0, 0, "client", "Leaving Pad", "9.9"));
+            leaver.Expect<Hello>();
+            leaver.CloseAbruptly();
+        }
+
+        using FakeClient client = Accept();
+        client.Handshake();
+        WaitFor(() => session.IsStreaming);
+
+        Assert.Equal((1, 0), (session.Counters.ConnectionsEstablished, session.Counters.ConnectionsLost));
+    }
+
+    [Fact]
+    public void A_connection_that_ends_in_the_middle_of_a_message_is_lost_and_re_established()
+    {
+        HostSession session = StartSession();
+        using (FakeClient first = Accept())
+        {
+            first.Handshake();
+            WaitFor(() => session.IsStreaming);
+
+            byte[] stats = ControlCodec.Encode(new ClientStats { FramesReceived = 3, FramesDecoded = 3, FramesRendered = 3 });
+            first.Send(stats[..(stats.Length / 2)]);
+            first.CloseAfterSending();
+        }
+
+        WaitFor(() => session.Counters.ConnectionsLost == 1);
+        Assert.True(Logged("in the middle of a message"), "the loss should be described as an interrupted message");
+
+        using FakeClient second = Accept();
+        second.Handshake();
+        WaitFor(() => session.IsStreaming);
+        Assert.Equal(2, session.Counters.ConnectionsEstablished);
+
+        // Half a statistics message is not statistics.
+        Assert.Equal(0, session.ClientTotals.FramesReceived);
+    }
+
+    [Fact]
+    public void A_client_that_keeps_talking_is_not_timed_out_however_long_the_connection_lasts()
+    {
+        HostSession session = StartSession(configure: options => options with { KeepaliveTimeout = TimeSpan.FromMilliseconds(500) });
+        using FakeClient client = Accept();
+        client.Handshake();
+        WaitFor(() => session.IsStreaming);
+
+        // Four timeouts' worth of time, with something arriving well inside each.
+        for (int i = 0; i < 20; i++)
+        {
+            client.Send(new ClientStats { FramesReceived = i, FramesDecoded = i, FramesRendered = i });
+            Thread.Sleep(100);
+        }
+
+        Assert.True(session.IsStreaming);
+        Assert.Equal((1, 0), (session.Counters.ConnectionsEstablished, session.Counters.ConnectionsLost));
+        Assert.False(Logged("nothing was received"), "a client that is sending must not be treated as silent");
+    }
+
+    [Fact]
+    public void A_silent_client_that_has_also_stopped_reading_is_still_timed_out_and_its_socket_closed()
+    {
+        // What a frozen app looks like: nothing comes back and nothing is taken. The writer ends up
+        // blocked, and the timeout has to end the connection all the same. Seen on a device.
+        _listener.Server.ReceiveBufferSize = 8 * 1024;
+        HostSession session = StartSession(configure: options => options with { KeepaliveTimeout = TimeSpan.FromMilliseconds(600) });
+        using FakeClient frozen = Accept();
+        frozen.Handshake();
+        WaitFor(() => session.IsStreaming);
+
+        byte[] large = LargeNonIdrAccessUnit(1024 * 1024);
+        session.OfferAccessUnit(H264Samples.IdrAccessUnit, 1);
+        for (int i = 0; i < 8; i++)
+        {
+            session.OfferAccessUnit(large, 2 + i);
+        }
+
+        // Two things run out at the same moment here, the wait for the client and the blocked
+        // write, and either may be the one that reports the loss. Both are the silence being noticed.
+        WaitFor(() => session.Counters.ConnectionsLost == 1 && Logged("connection lost"));
+        string loss = LoggedLine("connection lost");
+        Assert.True(
+            loss.Contains("nothing was received from the client for 0.6 s", StringComparison.Ordinal) || loss.Contains("TimedOut", StringComparison.Ordinal),
+            $"the loss was put down to something other than the silence: {loss}");
+        frozen.WaitUntilClosedByThePeer();
+        WaitFor(() => session.Counters.Unaccounted == 0);
+
+        using FakeClient next = Accept();
+        next.Handshake();
+        WaitFor(() => session.Counters.ConnectionsEstablished == 2);
+    }
+
+    [Fact]
+    public void A_client_that_goes_silent_is_lost_after_the_keepalive_timeout_and_the_host_connects_again()
+    {
+        HostSession session = StartSession(configure: options => options with { KeepaliveTimeout = TimeSpan.FromMilliseconds(500) });
+        using (FakeClient silent = Accept())
+        {
+            silent.Handshake();
+            WaitFor(() => session.IsStreaming);
+
+            // The socket stays open; nothing more is sent. Only the timeout can end this.
+            WaitFor(() => session.Counters.ConnectionsLost == 1);
+            Assert.True(Logged("nothing was received from the client for 0.5 s"), "the loss should be put down to silence");
+            Assert.False(session.IsStreaming);
+            silent.WaitUntilClosedByThePeer();
+        }
+
+        using FakeClient second = Accept();
+        second.Handshake();
+        WaitFor(() => session.Counters.ConnectionsEstablished == 2);
+    }
+
+    [Fact]
+    public void A_client_that_stops_reading_costs_frames_not_memory_and_does_not_hold_up_stopping()
+    {
+        // Small receive buffers, so that the host's writes block after very little.
+        _listener.Server.ReceiveBufferSize = 8 * 1024;
+        HostSession session = StartSession();
+        using FakeClient client = Accept();
+        client.Handshake();
+        WaitFor(() => session.IsStreaming);
+        Assert.True(session.TakeKeyframeRequest());
+        Thread.Sleep(KeyframeRequestLimiter.DefaultInterval + TimeSpan.FromMilliseconds(100));
+
+        // From here the client reads nothing, and each picture is far larger than the socket can buffer.
+        byte[] large = LargeNonIdrAccessUnit(1024 * 1024);
+        session.OfferAccessUnit(H264Samples.IdrAccessUnit, 1);
+        for (int i = 0; i < 40; i++)
+        {
+            session.OfferAccessUnit(large, 2 + i);
+        }
+
+        HostStreamCounters blocked = session.Counters;
+        Assert.InRange(session.QueueDepth, 0, 4);
+        Assert.InRange(blocked.Unaccounted, 0, 5);
+        Assert.True(blocked.DroppedQueueFull + blocked.DroppedAwaitingKeyframe >= 30, $"only {blocked.DroppedQueueFull + blocked.DroppedAwaitingKeyframe} of 41 frames were dropped");
+        Assert.True(session.TakeKeyframeRequest(), "dropping encoded frames must ask the encoder for a keyframe");
+
+        long took = TimeToStop(session, "stopped while the socket was full");
+
+        Assert.True(took < 1500, $"stopping took {took} ms with a write blocked");
+        Assert.Equal(SessionPhase.Disconnected, session.Phase);
+        WaitFor(() => session.Counters.Unaccounted == 0);
+        Assert.Equal(41, session.Counters.Encoded);
+    }
+
+    [Fact]
+    public void After_a_loss_the_transport_is_set_up_again_before_each_new_attempt()
+    {
+        int restores = 0;
+        using var portIsBack = new ManualResetEventSlim();
+        string? Restore()
+        {
+            // Stands in for 'adb forward' after the device went away: it fails until the device is
+            // back, and only then does the port exist again.
+            int attempt = Interlocked.Increment(ref restores);
+            if (attempt < 3)
+            {
+                return "no devices/emulators found";
+            }
+
+            if (attempt == 3)
+            {
+                var listener = new TcpListener(IPAddress.Loopback, Port);
+                listener.Start();
+                _listener = listener;
+                portIsBack.Set();
+            }
+
+            return null;
+        }
+
+        HostSession session = StartSession(configure: options => options with { RestoreTransport = Restore });
+        using (FakeClient first = Accept())
+        {
+            first.Handshake();
+            WaitFor(() => session.IsStreaming);
+            Assert.Equal(0, Volatile.Read(ref restores));
+
+            // The device goes: the port disappears and the connection with it.
+            _listener.Stop();
+            first.CloseAbruptly();
+        }
+
+        Assert.True(portIsBack.Wait(Patience, TestContext.Current.CancellationToken), "the transport was not set up again");
+        Assert.True(Volatile.Read(ref restores) >= 3);
+        using FakeClient second = Accept();
+        second.Handshake();
+        WaitFor(() => session.IsStreaming);
+
+        Assert.Equal((2, 1), (session.Counters.ConnectionsEstablished, session.Counters.ConnectionsLost));
+        Assert.True(Logged("no devices/emulators found"), "the reason the transport could not be set up should be logged");
+    }
+
+    [Fact]
+    public void A_transport_that_cannot_be_set_up_again_fails_the_session_when_its_budget_is_spent()
+    {
+        int restores = 0;
+        HostSession session = StartSession(
+            TimeSpan.FromSeconds(1),
+            options => options with
+            {
+                RestoreTransport = () =>
+                {
+                    Interlocked.Increment(ref restores);
+                    return "no devices/emulators found";
+                },
+            });
+        using (FakeClient first = Accept())
+        {
+            first.Handshake();
+            WaitFor(() => session.IsStreaming);
+            first.CloseAbruptly();
+        }
+
+        WaitFor(() => session.HasEnded);
+
+        Assert.Equal(SessionPhase.Failed, session.Phase);
+        Assert.Contains("re-established within 1 s", session.EndReason);
+        Assert.Contains("no devices/emulators found", session.EndReason);
+        Assert.True(Volatile.Read(ref restores) >= 2, "the transport should have been retried, not tried once");
+
+        // With the transport known to be absent, nothing was connected to.
+        Assert.Equal(1, session.Counters.ConnectionsEstablished);
+    }
+
     private static ClientCapabilities Capabilities(int maxWidth, int maxHeight) =>
         new(3200, 2136, 120, [new DecoderCapability("fake.decoder", true, false, maxWidth, maxHeight)]);
 
-    private HostSession StartSession(TimeSpan? reconnectBudget = null)
+    /// <summary>A non-IDR access unit of about <paramref name="size"/> bytes; the payload is filler.</summary>
+    private static byte[] LargeNonIdrAccessUnit(int size)
     {
+        byte[] filler = new byte[size];
+        Array.Fill(filler, (byte)0xAA);
+        filler[0] = 0x41;
+        return H264Samples.Join(H264Samples.AccessUnitDelimiter, filler);
+    }
+
+    /// <summary>Stops the session and returns how many milliseconds that took.</summary>
+    private static long TimeToStop(HostSession session, string reason)
+    {
+        long started = Environment.TickCount64;
+        session.Stop(reason);
+        return Environment.TickCount64 - started;
+    }
+
+    private string LoggedLine(string fragment)
+    {
+        lock (_log)
+        {
+            return _log.First(line => line.Contains(fragment, StringComparison.Ordinal));
+        }
+    }
+
+    private bool Logged(string fragment)
+    {
+        lock (_log)
+        {
+            return _log.Any(line => line.Contains(fragment, StringComparison.Ordinal));
+        }
+    }
+
+    private HostSession StartSession(TimeSpan? reconnectBudget = null, Func<HostSessionOptions, HostSessionOptions>? configure = null)
+    {
+        var options = new HostSessionOptions(Port, reconnectBudget ?? TimeSpan.FromSeconds(8), SendQueueCapacity: 4, "TEST-HOST", "1.2.3");
         var session = new HostSession(
-            new HostSessionOptions(Port, reconnectBudget ?? TimeSpan.FromSeconds(8), SendQueueCapacity: 4, "TEST-HOST", "1.2.3"),
+            configure?.Invoke(options) ?? options,
             () => Config,
             message =>
             {
@@ -444,6 +790,41 @@ public sealed class HostSessionTests : IDisposable
 
         /// <summary>Drops the connection without a goodbye, as a pulled cable or a killed app would.</summary>
         public void CloseAbruptly() => socket.Close(0);
+
+        /// <summary>Ends the connection in an orderly way at the socket level, so that what was sent arrives first.</summary>
+        public void CloseAfterSending()
+        {
+            socket.Shutdown(SocketShutdown.Send);
+            socket.Close(1);
+        }
+
+        /// <summary>Reads and discards until the host closes or resets the connection; fails if it does not.</summary>
+        public void WaitUntilClosedByThePeer()
+        {
+            byte[] scratch = new byte[4096];
+            long deadline = Environment.TickCount64 + (long)Patience.TotalMilliseconds;
+            while (Environment.TickCount64 < deadline)
+            {
+                if (!socket.Poll(50_000, SelectMode.SelectRead))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    if (socket.Receive(scratch) == 0)
+                    {
+                        return;
+                    }
+                }
+                catch (SocketException)
+                {
+                    return;
+                }
+            }
+
+            Assert.Fail($"The host left the connection open for {Patience.TotalSeconds:0} s.");
+        }
 
         public void Dispose() => socket.Dispose();
     }
