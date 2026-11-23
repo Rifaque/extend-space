@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ExtendSpace.Linux/ExtendSpace.Linux.csproj" />
+    <Project Path="src/ExtendSpace.Host.Linux/ExtendSpace.Host.Linux.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ExtendSpace.Linux.Tests/ExtendSpace.Linux.Tests.csproj" />
+  </Folder>
+</Solution>

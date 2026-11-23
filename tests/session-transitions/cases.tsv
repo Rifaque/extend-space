@@ -1,0 +1,72 @@
+# Session state-machine transition cases, shared by the Windows and Android test suites.
+#
+# One case per line, tab-separated. Each test suite reads this file and runs every case against
+# its own state machine; neither keeps a copy. See README.md beside this file.
+#
+# id            a stable name for the case
+# given         events applied first, comma-separated, every one of which must be accepted; '-' for none
+# when          the event under test
+# accepted      yes if the state machine must accept it, no if it must reject it and leave the state as it was
+# phase         the phase afterwards
+# has_streamed  yes or no: whether this session has reached Streaming; '-' where the phase has no such notion
+# attempt_fault kept if the fault of the last failed attempt is held in the state, none if not; '-' as above
+# note          what the case is for
+#
+id	given	when	accepted	phase	has_streamed	attempt_fault	note
+S01	-	connect	yes	Connecting	no	none	A start is accepted from Disconnected
+S02	connect	transport_connected	yes	Negotiating	no	none	The transport connecting begins negotiation
+S03	connect,transport_connected	negotiation_completed	yes	Streaming	yes	none	Negotiation completing begins streaming
+S04	connect,transport_connected,negotiation_completed	connection_lost	yes	Reconnecting	yes	kept	Losing a streaming connection begins reconnection and records why
+S05	connect,transport_connected,negotiation_completed,connection_lost	transport_connected	yes	Negotiating	yes	kept	A reconnection negotiates again; why it was lost stays visible
+S06	connect,transport_connected,negotiation_completed,connection_lost,transport_connected	negotiation_completed	yes	Streaming	yes	none	A reconnection that negotiates is streaming again
+A01	connect	attempt_failed	yes	Connecting	no	kept	A failed attempt before the transport connected stays in Connecting
+A02	connect,transport_connected	attempt_failed	yes	Connecting	no	kept	A failed first negotiation returns to Connecting
+A03	connect,transport_connected,negotiation_completed,connection_lost	attempt_failed	yes	Reconnecting	yes	kept	A failed reconnection attempt stays in Reconnecting
+A04	connect,transport_connected,negotiation_completed,connection_lost,transport_connected	attempt_failed	yes	Reconnecting	yes	kept	A failed renegotiation returns to Reconnecting, not Connecting
+A05	-	attempt_failed	no	Disconnected	-	-	No attempt can fail when no session exists
+A06	connect,transport_connected,negotiation_completed	attempt_failed	no	Streaming	yes	none	A streaming session does not have attempts; losing it is connection_lost
+A07	connect,disconnect	attempt_failed	no	Disconnecting	-	-	A session being torn down ignores late attempt results
+A08	connect,failed	attempt_failed	no	Failed	-	-	A failed session ignores late attempt results
+A09	connect	attempt_failed_terminal	no	Connecting	no	none	A terminal fault is not a failed attempt; it must be reported as failed
+A10	connect,transport_connected	attempt_failed_terminal	no	Negotiating	no	none	The same while negotiating: rejected, state untouched
+R01	connect,attempt_failed	transport_connected	yes	Negotiating	no	kept	Retry after a failed attempt; the last failure stays visible until one succeeds
+R02	connect,transport_connected,attempt_failed,transport_connected	negotiation_completed	yes	Streaming	yes	none	A retry that succeeds clears the recorded failure
+R03	connect,attempt_failed	attempt_failed	yes	Connecting	no	kept	Attempts may fail repeatedly; how many is the coordinator's business
+R04	connect,transport_connected,negotiation_completed,connection_lost,attempt_failed,transport_connected	negotiation_completed	yes	Streaming	yes	none	A reconnection that succeeds after a failed attempt
+R05	connect,transport_connected,attempt_failed	negotiation_completed	no	Connecting	no	kept	After a failed negotiation the transport must connect again first
+D01	connect	disconnect	yes	Disconnecting	-	-	Stop while connecting
+D02	connect,transport_connected	disconnect	yes	Disconnecting	-	-	Stop while negotiating
+D03	connect,transport_connected,negotiation_completed	disconnect	yes	Disconnecting	-	-	Stop while streaming
+D04	connect,transport_connected,negotiation_completed,connection_lost	disconnect	yes	Disconnecting	-	-	Stop while reconnecting
+D05	connect,attempt_failed	disconnect	yes	Disconnecting	-	-	Stop between retries
+D06	connect,disconnect	teardown_completed	yes	Disconnected	-	-	Teardown completing ends the session
+D07	connect,disconnect	disconnect	no	Disconnecting	-	-	A second stop request changes nothing
+D08	connect,disconnect	connect	no	Disconnecting	-	-	No start until teardown has completed
+D09	connect,disconnect	failed	no	Disconnecting	-	-	A session being torn down cannot fail
+D10	-	disconnect	no	Disconnected	-	-	There is nothing to stop
+D11	connect,disconnect	transport_connected	no	Disconnecting	-	-	A transport that connects late is ignored
+U01	connect	connect	no	Connecting	no	none	Duplicate start while connecting
+U02	connect,transport_connected,negotiation_completed	connect	no	Streaming	yes	none	Duplicate start while streaming
+U03	connect,transport_connected,negotiation_completed	transport_connected	no	Streaming	yes	none	The transport cannot connect twice
+U04	connect,transport_connected,negotiation_completed	negotiation_completed	no	Streaming	yes	none	Negotiation cannot complete twice
+U05	connect	negotiation_completed	no	Connecting	no	none	Negotiation cannot complete before the transport connected
+U06	connect	connection_lost	no	Connecting	no	none	Only a streaming connection can be lost
+U07	connect,transport_connected	connection_lost	no	Negotiating	no	none	A loss while negotiating is a failed attempt, not connection_lost
+U08	-	transport_connected	no	Disconnected	-	-	Nothing can connect when no session exists
+U09	connect,transport_connected,negotiation_completed,connection_lost	connection_lost	no	Reconnecting	yes	kept	A lost connection cannot be lost again
+U10	connect,transport_connected,negotiation_completed	connection_lost_terminal	no	Streaming	yes	none	A loss with a terminal fault is not a loss to recover from; it must be reported as failed
+F01	connect	failed	yes	Failed	-	-	Failure while connecting
+F02	connect,transport_connected	failed	yes	Failed	-	-	Failure while negotiating
+F03	connect,transport_connected,negotiation_completed	failed	yes	Failed	-	-	Failure while streaming
+F04	connect,transport_connected,negotiation_completed,connection_lost	failed	yes	Failed	-	-	Failure while reconnecting, as when the budget is spent
+F05	connect,failed	connect	no	Failed	-	-	No start until the failure is acknowledged
+F06	connect,failed	acknowledge	yes	Disconnected	-	-	Acknowledging a failure returns to Disconnected
+F07	connect,failed	disconnect	no	Failed	-	-	A failed session has nothing left to stop
+F08	connect,failed	failed	no	Failed	-	-	The first failure is the one that is kept
+F09	-	acknowledge	no	Disconnected	-	-	There is no failure to acknowledge
+F10	-	teardown_completed	no	Disconnected	-	-	There is no teardown to complete
+F11	connect,transport_connected,negotiation_completed	acknowledge	no	Streaming	yes	none	Acknowledge applies only to a failure
+N01	connect,failed,acknowledge	connect	yes	Connecting	no	none	A new session can start after a failure is acknowledged
+N02	connect,transport_connected,negotiation_completed,failed,acknowledge,connect	transport_connected	yes	Negotiating	no	none	A new session does not inherit that the last one streamed
+N03	connect,transport_connected,negotiation_completed,disconnect,teardown_completed,connect,transport_connected	attempt_failed	yes	Connecting	no	kept	So its first failed attempt returns to Connecting, not Reconnecting
+N04	connect,attempt_failed,disconnect,teardown_completed,connect	transport_connected	yes	Negotiating	no	none	A new session does not inherit the last one's attempt failure

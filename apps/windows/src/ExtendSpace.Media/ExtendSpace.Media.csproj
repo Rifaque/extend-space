@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Capture, colour conversion and H.264 encoding for the production session: the experiment's
+       Capture/, Graphics/ and Encoding/ code behind ExtendSpace.Core's IVideoPipeline. It needs the
+       Windows SDK projection and CsWin32, which is why it is not part of ExtendSpace.Core
+       (architecture section 6.3 and the stage plan's layout). -->
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <!-- Windows 11 is the supported floor, as for the host. -->
+    <TargetPlatformMinVersion>10.0.22000.0</TargetPlatformMinVersion>
+    <RootNamespace>ExtendSpace.Media</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Build-time source generator for the declarations listed in NativeMethods.txt. Nothing from it
+         ships at run time. -->
+    <PackageReference Include="Microsoft.Windows.CsWin32" Version="0.3.360" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ExtendSpace.Core\ExtendSpace.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ExtendSpace.Media.Tests" />
+  </ItemGroup>
+
+</Project>

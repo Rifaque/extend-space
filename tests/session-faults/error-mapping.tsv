@@ -1,0 +1,35 @@
+# How a fault becomes the code the user is told (architecture section 9.3), shared by the Windows
+# and Android test suites. Each suite reads this file and checks its own mapping against every
+# line that names its platform; neither keeps a copy. See README.md beside this file.
+#
+# category      the fault category, lower case
+# code          the fault code; only the protocol category maps differently by code
+# has_streamed  yes or no: whether the session had streamed when it failed; - for both
+# error         the user-facing code, lower_snake_case
+# platforms     which suites check the line: windows, android, or both
+# note          why
+#
+category	code	has_streamed	error	platforms	note
+transport	adb_not_found	-	transport_unavailable	both	The route to the other device could not be set up
+connection	no_app_listening	no	transport_unavailable	both	A connection that never came up is unavailable
+connection	connection_reset	yes	connection_lost	both	One that came up and went away is lost
+timeout	handshake_timeout	no	transport_unavailable	both	Silence before streaming is the same as nothing there
+timeout	keepalive_timeout	yes	connection_lost	both	Silence after streaming is a loss
+protocol	protocol_version_unsupported	-	incompatible_protocol	both	Another major version
+protocol	no_common_configuration	-	negotiation_failed	both	Nothing the client decodes fits what the host sends
+protocol	stream_config_rejected	-	negotiation_failed	both	The client cannot apply the stream it was offered
+protocol	malformed_message	-	incompatible_protocol	both	Any other protocol violation
+transport	device_not_attached	-	transport_unavailable	windows	No device yet: retried within the budget, then this
+transport	device_unauthorized	-	transport_unavailable	windows	Terminal: the user has to accept the prompt on the device
+transport	several_devices_attached	-	transport_unavailable	windows	Terminal: the host never guesses which device
+transport	device_serial_invalid	-	transport_unavailable	windows	Terminal: the configured serial (ANDROID_SERIAL) cannot be an adb serial
+timeout	send_timeout	yes	connection_lost	windows	A client that stopped reading, after streaming
+protocol	message_too_large	-	incompatible_protocol	windows	A frame beyond its channel limit
+protocol	unexpected_message	-	incompatible_protocol	windows	A message out of place, or a peer that is not a client
+protocol	peer_error	-	incompatible_protocol	windows	A fatal error whose code the protocol does not define
+capture	monitor_resized	-	capture_unavailable	windows	Only the host captures
+encoder	encoder_unavailable	-	encoder_unavailable	windows	Only the host encodes
+decoder	decoder_create_failed	-	decoder_unavailable	android	Only the client decodes
+internal	unexpected_exception	-	internal	both	Something nothing expected
+internal	unrequested_cancellation	-	internal	both	A component reported a cancellation nobody asked for
+cleanup	teardown_step_failed	-	internal	both	Never the cause of a failure in practice; mapped so that nothing is unmapped

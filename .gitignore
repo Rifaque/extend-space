@@ -39,6 +39,8 @@ local.properties
 *.aab
 *.jks
 *.keystore
+# Release signing settings (passwords). Never commit.
+keystore.properties
 # The Gradle wrapper JAR is the one binary that is intentionally tracked.
 !gradle/wrapper/gradle-wrapper.jar
 

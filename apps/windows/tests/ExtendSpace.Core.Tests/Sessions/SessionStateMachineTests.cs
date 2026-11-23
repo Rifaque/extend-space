@@ -6,6 +6,7 @@ public class SessionStateMachineTests
 {
     private static readonly SessionRequest UsbMirror = new(TransportKind.Usb, DisplayMode.Mirror);
     private static readonly SessionError Lost = new(SessionErrorCode.ConnectionLost);
+    private static readonly SessionFault Reset = new(FaultCategory.Connection, "connection_reset", "The connection was reset.", FaultTreatment.Retryable);
 
     private static SessionStateMachine MachineAfter(params SessionEvent[] events)
     {
@@ -44,7 +45,7 @@ public class SessionStateMachineTests
         Assert.Equal(new SessionState(SessionPhase.Negotiating, request), machine.State);
 
         Assert.True(machine.Dispatch(new SessionEvent.NegotiationCompleted()));
-        Assert.Equal(new SessionState(SessionPhase.Streaming, request), machine.State);
+        Assert.Equal(new SessionState(SessionPhase.Streaming, request, HasStreamed: true), machine.State);
     }
 
     [Fact]
@@ -52,11 +53,11 @@ public class SessionStateMachineTests
     {
         SessionStateMachine machine = MachineAfter(ToStreaming());
 
-        Assert.True(machine.Dispatch(new SessionEvent.ConnectionLost()));
-        Assert.Equal(new SessionState(SessionPhase.Reconnecting, UsbMirror), machine.State);
+        Assert.True(machine.Dispatch(new SessionEvent.ConnectionLost(Reset)));
+        Assert.Equal(new SessionState(SessionPhase.Reconnecting, UsbMirror, HasStreamed: true, LastAttemptFault: Reset), machine.State);
 
         Assert.True(machine.Dispatch(new SessionEvent.TransportConnected()));
-        Assert.Equal(new SessionState(SessionPhase.Negotiating, UsbMirror), machine.State);
+        Assert.Equal(new SessionState(SessionPhase.Negotiating, UsbMirror, HasStreamed: true, LastAttemptFault: Reset), machine.State);
     }
 
     public static TheoryData<SessionPhase> InProgressPhases =>
@@ -127,7 +128,7 @@ public class SessionStateMachineTests
         SessionStateMachine machine = MachineAfter(ToStreaming());
 
         Assert.False(machine.Dispatch(new SessionEvent.ConnectRequested(new SessionRequest(TransportKind.Wireless, DisplayMode.Extend))));
-        Assert.Equal(new SessionState(SessionPhase.Streaming, UsbMirror), machine.State);
+        Assert.Equal(new SessionState(SessionPhase.Streaming, UsbMirror, HasStreamed: true), machine.State);
     }
 
     [Fact]

@@ -43,21 +43,6 @@
                         <FontIcon Glyph="&#xE80F;" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="Devices" Tag="devices">
-                    <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE772;" />
-                    </NavigationViewItem.Icon>
-                </NavigationViewItem>
-                <NavigationViewItem Content="Quality" Tag="quality">
-                    <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE9E9;" />
-                    </NavigationViewItem.Icon>
-                </NavigationViewItem>
-                <NavigationViewItem Content="Display" Tag="display">
-                    <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE7F4;" />
-                    </NavigationViewItem.Icon>
-                </NavigationViewItem>
             </NavigationView.MenuItems>
             <NavigationView.FooterMenuItems>
                 <NavigationViewItem Content="Diagnostics" Tag="diagnostics">

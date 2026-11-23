@@ -1,13 +1,13 @@
 # ExtendSpace protocol — draft 0
 
-Status: **draft, partly implemented.** The USB binding, the framing, the handshake, video delivery,
-keyframe requests, keepalive, statistics and reconnection are implemented by the
-[first streaming experiment](../../docs/architecture/streaming-experiment-01.md#step-3--live-stream-over-adb-forward)
-— a Windows console program and a debug-only Android screen — and have carried live video between a
-PC and one tablet. Neither application uses any of it yet. Pairing, authentication, Wi-Fi and input
-are still design only. [Section 16](#16-implementation-status) lists exactly what exists and where
-the implementation added to, or stopped short of, this text. Sections marked *Open* are undecided on
-purpose.
+Status: **draft, implemented in both applications.** The USB binding, the framing, the handshake,
+video delivery, keyframe requests, keepalive, statistics and reconnection run in the Windows host and
+the Android app and have carried live video between a PC and one tablet over USB. Since Phases 10 and
+11 (November 2026) the **Wi-Fi binding, pairing and touch input** are specified here and implemented
+in both applications; they have been run between the two real implementations on one PC (loopback,
+desktop-JVM TLS on the Android side) but **not yet between a PC and a tablet over Wi-Fi**.
+[Section 16](#16-implementation-status) lists exactly what exists and how it was verified. Sections
+marked *Open* are undecided on purpose.
 
 The protocol is the same over USB and Wi-Fi. Transports differ only in how a connection is opened
 and authenticated (see [Transport bindings](#3-transport-bindings)).
@@ -31,7 +31,7 @@ encoding or scheduling:
 | --- | --- | --- | --- |
 | 0 | Control | both | Small structured messages: handshake, configuration, keepalive, errors. |
 | 1 | Video | host → client | Encoded video access units. |
-| 2 | Input | client → host | Reserved. See [Future input](#13-future-input-messages). |
+| 2 | Input | client → host | Touch, when the host offers it. See [Input](#13-input-messages). |
 
 A transport binding decides whether channels share one connection or use several. Draft 0 puts them
 on one ordered byte stream. Keeping the channel in the frame header leaves room to move video to its
@@ -51,8 +51,8 @@ Requirements on any binding:
 
 | Binding | How it connects | Authentication |
 | --- | --- | --- |
-| **USB (ADB)** | The host asks `adb` to forward a host loopback TCP port to a local (non-network) socket owned by the Android app, then connects to that port. Implemented as `adb forward tcp:27183 localabstract:extendspace`: the app listens on the abstract local socket `extendspace`, the host connects to `127.0.0.1:27183`, and the host removes the forward when it stops. The port is a default, not part of the protocol. | The cable and the device's ADB authorisation gate access. The Android app additionally accepts only connections that come from the ADB daemon: it reads the peer's credentials and closes the connection unless the peer's user ID is the shell user (2000) or root (0). Loopback and local sockets only; nothing listens on a network interface, and the Android app needs no network permission. |
-| **Wi-Fi** | *Open.* Likely: client connects to a host TCP listener found by local discovery. | Mandatory mutual authentication with keys established at pairing ([section 6](#6-device-identity-and-pairing)). The listener accepts no application data before authentication succeeds. |
+| **USB (ADB)** | The host asks `adb` to forward a host loopback TCP port to a local (non-network) socket owned by the Android app, then connects to that port. Implemented as `adb forward tcp:27183 localabstract:extendspace`: the app listens on the abstract local socket `extendspace`, the host connects to `127.0.0.1:27183`, and the host removes the forward when it stops. The port is a default, not part of the protocol: the experiment uses 27183, and the Windows host application asks the system for a free loopback port for each session. | The cable and the device's ADB authorisation gate access. The Android app additionally accepts only connections that come from the ADB daemon: it reads the peer's credentials and closes the connection unless the peer's user ID is the shell user (2000) or root (0). Loopback and local sockets only; nothing listens on a network interface, and the Android app needs no network permission. |
+| **Wi-Fi** | The **client listens** (only while its user has it waiting with Wi-Fi allowed, or pairing) and advertises itself by DNS-SD as `_extendspace._tcp` (TXT `id` = first 16 hex digits of its device ID, `v` = protocol major, `p` = `1` while pairing); the host browses and connects by TCP to the advertised address and port (default 27184). Decision D74; details in the [transport architecture](../../docs/architecture/transport-architecture.md). | **Mutual TLS 1.3** with each side's self-signed certificate; each side checks the other's key against the device ID stored at pairing, never a CA. ALPN `exsp/0` for a session, `exsp-pair/0` for pairing. On `exsp/0` the client checks the host's ID against its trusted list before reading anything: an unknown host gets the preface and a fatal `not_paired`. Inside TLS the session is exactly sections 4–14. |
 
 ## 4. Framing
 
@@ -114,7 +114,9 @@ SPS and PPS).
 
 ## 6. Device identity and pairing
 
-*Design intent. The pairing ceremony is Open.*
+*Implemented (D76–D79). The list below was the design intent and still holds; the ceremony is
+specified in the [transport architecture, section 5](../../docs/architecture/transport-architecture.md#5-pairing-protocol-exsp-pair0):
+a commit-reveal numeric comparison inside the TLS connection, with both users confirming six digits.*
 
 - Each installation generates a long-term key pair on first run and keeps the private key in
   platform-protected storage (Android Keystore; DPAPI- or TPM-protected on Windows). Keys are never
@@ -129,8 +131,10 @@ SPS and PPS).
   `authentication_failed` error.
 - Either side can unpair, which deletes the stored key and ends any session.
 
-Over USB the user has already authorised the computer on the device. *Open:* whether USB sessions
-also require an ExtendSpace pairing, or whether a USB session is how first pairing happens.
+Over USB the user has already authorised the computer on the device (adb's own authorisation), and
+the app admits only adb's daemon; USB sessions need no ExtendSpace pairing. Pairing happens over
+Wi-Fi. As implemented, the device ID is the SHA-256 of the SubjectPublicKeyInfo; Android keeps its key
+in AndroidKeyStore, Windows in a DPAPI-protected PKCS#12.
 
 ## 7. Session lifecycle
 
@@ -204,10 +208,15 @@ connection, and a change of the source's size ends its run.
   showing an ever older picture. After a discard, a gap or an error it ignores everything up to the
   next `CONFIG | KEYFRAME` frame.
 
-*As implemented:* the host's queue holds 4 frames. The client allows 4 access units waiting for the
-decoder, and 30 until the decoder has returned its first picture, because a hardware decoder takes
-on the order of 100 ms to start and discarding the opening keyframe would only delay the picture
-further.
+*As implemented:* the host's queue holds 4 frames. When it is full it keeps the newest queued
+keyframe and the frames after it, dropping only what precedes that keyframe or what follows the
+kept run, so that after any gap the next frame sent is a keyframe; it asks the encoder for a new
+keyframe only once its writer can send again, so that no keyframe is made, or rate-limited, while
+nothing can leave (D64). A frame too large to send uses up its sequence number, so the client sees
+the gap. None of this changes the wire format. The client allows 4 access units waiting for the
+decoder, and 30 until the decoder has caught up after starting (D60), because a hardware decoder
+takes on the order of 100 ms to start and discarding the opening keyframe would only delay the
+picture further.
 
 ## 10. Keyframe requests
 
@@ -254,8 +263,10 @@ sender closes the connection.
 | `no_common_configuration` | Capabilities and host requirements do not overlap. |
 | `stream_config_rejected` | The client cannot apply the configuration it was sent. |
 | `timeout` | A handshake step or a keepalive did not arrive in time. |
-| `busy` | A session with another device is already active. |
+| `busy` | A session with another device is already active, or (Wi-Fi) the client is not waiting for a host. |
 | `internal_error` | Anything else. |
+| `pairing_failed` | Pairing only: the reveal did not match the commitment, or the exchange was broken. |
+| `pairing_not_open` | Pairing only: the client's user has not opened its pairing window. |
 
 **Failing safely.** Input from the peer is untrusted at every step. A malformed, oversized or
 out-of-order message ends the session with a fatal error; it never crashes the process, is never
@@ -279,12 +290,29 @@ partially applied, and never leaves capture, encoder or a virtual display runnin
   another monitor during a brief interruption, and is removed when reconnection is abandoned.
 - Authentication, version and configuration errors are never retried automatically.
 
-## 13. Future input messages
+## 13. Input messages
 
-Channel 2 is reserved for input from the client: touch (pointer ID, action, position, pressure),
-then keyboard and mouse. Positions will be normalised to the video frame so they survive resolution
-changes. Input is accepted only in an authenticated session and only when the user has enabled it on
-the host. Nothing here is specified further yet.
+*Implemented (D81–D84); details in the [input architecture](../../docs/architecture/input-architecture.md).*
+
+**Offer.** `stream_config` carries `"input": {"touch": true}` when the host's user has input on. A
+client sends input only on a connection whose `stream_config` offered it; a host that did not offer it
+treats any input frame as a fatal `unexpected_message`, as before. Older clients ignore the field.
+
+**`touch`**: channel 2, type 1, flags 0; big-endian payload:
+
+| Offset | Size | Field |
+| --- | --- | --- |
+| 0 | 4 | `sequence`, from 0 on each connection, +1 per frame |
+| 4 | 1 | `count`, 1–10 |
+| 5 | 3 | reserved, 0 |
+| 8 | 8 × count | contacts: `id` (u8, 0–31), `phase` (u8: 0 down, 1 move, 2 up, 3 cancel), `x`, `y` (u16, 0–65535 over the picture), reserved (u16) |
+
+A frame lists every contact that is down plus any lifting in it. A count outside 1–10, a repeated id,
+an unknown phase or a wrong length is a fatal `malformed_message`; a frame whose sequence is not
+greater than the last is dropped; other input types are ignored. The host maps the picture through its
+own letterbox onto the mirrored monitor and releases every contact when the connection or stream ends.
+Input is accepted only on an authenticated route (adb's daemon over USB, a paired PC over Wi-Fi).
+Byte-exact examples: `tests/input-vectors/touch-v1.json`, checked by both test suites.
 
 ## 14. Control message summary
 
@@ -300,8 +328,13 @@ the host. Nothing here is specified further yet.
 | 8 | `stats` | client → host | Client-side stream statistics. |
 | 9 | `error` | both | Report an error; fatal errors end the session. |
 | 10 | `bye` | both | Orderly end of session. |
+| 11 | `pair_commit` | host → client | Pairing only: commitment to the host's nonce. |
+| 12 | `pair_nonce` | client → host | Pairing only: the client's nonce. |
+| 13 | `pair_reveal` | host → client | Pairing only: the host's nonce. |
+| 14 | `pair_result` | both | Pairing only: whether that side's user confirmed the code. |
 
-Authentication messages will be added with the pairing design.
+Types 11–14 are sent only on `exsp-pair/0` connections; on a session connection they are
+`unexpected_message`. Pairing vectors: `tests/pairing-vectors/sas-v1.json`.
 
 **Fields, as implemented.** Every payload is one JSON object. Fields marked optional may be absent;
 a receiver ignores fields it does not know. Times ending `_us` are whole microseconds on the
@@ -310,9 +343,12 @@ fractions.
 
 | Message | Fields |
 | --- | --- |
-| `hello` | `protocol_min`, `protocol_max` (major versions, integers); optional `role` (`"host"` or `"client"`), `device_name`, `app_version`. No device ID yet: that arrives with pairing. |
+| `hello` | `protocol_min`, `protocol_max` (major versions, integers); optional `role` (`"host"` or `"client"`), `device_name`, `app_version`, and `purpose` (`"pair"` on a pairing connection). The device ID is not carried: over Wi-Fi it is the TLS certificate's key. |
 | `capabilities` | `display`: `width`, `height`, optional `refresh_hz`. `decoders`: an array of `codec` (`"h264"`; other codecs are ignored), `name`, `hardware`, optional `low_latency`, `max_width`, `max_height`. |
-| `stream_config` | `codec`, `profile` (`"baseline"`, `"main"` or `"high"`), `width`, `height`, `frame_rate`, `bitrate` (bit/s), `max_video_payload` (bytes); optional `encoder` and `encoder_acceleration` (`"hardware"`, `"software"` or `"unknown"`), for the client's diagnostics only. |
+| `stream_config` | `codec`, `profile` (`"baseline"`, `"main"` or `"high"`), `width`, `height`, `frame_rate`, `bitrate` (bit/s), `max_video_payload` (bytes); optional `encoder` and `encoder_acceleration` (`"hardware"`, `"software"` or `"unknown"`), for the client's diagnostics only; optional `input` object (`touch`: boolean, section 13); optional `mode` (`"extend"` when the stream is a virtual monitor extending the desktop, D90; absent means mirror). |
+| `pair_commit` | `commitment`: base64 of 32 bytes. |
+| `pair_nonce`, `pair_reveal` | `nonce`: base64 of 32 bytes. |
+| `pair_result` | `accepted`: boolean. |
 | `stream_ready` | Optional `decoder` (its name) and `hardware`. |
 | `request_keyframe` | Optional `reason`. |
 | `ping` | `id`, `host_time_us`; optional `clock_offset_us` (client clock minus host clock) and `round_trip_us`, both absent until the first `pong` has come back. |
@@ -329,8 +365,9 @@ timestamp the frame was queued with rather than a display time on the device tes
 
 ## 15. Open questions
 
-1. Pairing ceremony and the exact key agreement used over Wi-Fi.
-2. Whether USB sessions require pairing.
+1. ~~Pairing ceremony and the exact key agreement used over Wi-Fi.~~ Settled (D76, D77): TLS 1.3 key
+   agreement, commit-reveal numeric comparison bound to both TLS identities. Not externally reviewed.
+2. ~~Whether USB sessions require pairing.~~ Settled: no (section 6).
 3. Whether Wi-Fi video should move off TCP to avoid head-of-line blocking on lossy networks.
 4. Binary encoding for control messages.
 5. Clock relationship between host and client for end-to-end latency measurement. *Partly settled:*
@@ -355,18 +392,18 @@ without a test failing.
 
 | Section | State |
 | --- | --- |
-| 2 Channels | Control and video implemented. Channels with an ID above 2 are skipped. A frame on the input channel is checked against its size limit and then refused as `unexpected_message`, which ends the connection: nothing sends input yet. |
-| 3 Transport bindings | USB (ADB) implemented and exercised on one PC and one tablet. Wi-Fi not started. |
+| 2 Channels | Control, video and input implemented. Channels with an ID above 2 are skipped. A frame on the input channel is checked against its size limit; on a connection that was not offered input it is refused as `unexpected_message`, which ends the connection (section 13). |
+| 3 Transport bindings | USB (ADB) implemented and exercised on one PC and one tablet. Wi-Fi implemented in both apps (D74–D80) and exercised between the two real implementations on one PC over loopback (SChannel client, desktop-JVM TLS server); not yet over Wi-Fi to a tablet. |
 | 4 Framing | Implemented on both sides, including every limit, checked before the payload is read. |
 | 5 Versioning | `hello` carries the range and a host or client with no common major version refuses. Only version 0 exists, so no real negotiation has happened. |
-| 6 Identity and pairing | Not implemented. `hello` carries no device ID. |
-| 7 Session lifecycle | Implemented in the experiment's own host session and client session, with the states of this section. The applications' session state machines are not connected to it. The handshake timeout closes the connection; it does not send a `timeout` error first. Stopping the host cancels a handshake in progress instead of waiting for it. |
+| 6 Identity and pairing | Implemented (D76–D79): unit tests, TLS loopback tests on both sides, shared vectors, and one cross-implementation pairing on one PC whose two codes matched. AndroidKeyStore and Conscrypt not yet exercised (needs the tablet). |
+| 7 Session lifecycle | Implemented in the experiment's own host session and client session, with the states of this section. In the experiment the handshake timeout closes the connection without sending a `timeout` error first; the Windows host application's connection sends the fatal `timeout` error as this section requires, then closes. Stopping the host cancels a handshake in progress instead of waiting for it, in both. |
 | 8 Capabilities and configuration | A minimal subset; see the note in that section. No reconfiguration during a stream. |
-| 9 Video delivery and backpressure | Implemented. The host's skip-before-encode path is used only while no client is streaming; when the send queue is full it drops encoded frames up to the next keyframe and forces one, which is the second-choice behaviour in this text. In every measured run the queue never held more than one frame, so that path has unit tests but has not run against a real device. |
+| 9 Video delivery and backpressure | Implemented. The host's skip-before-encode path is used only while no client is streaming; when the send queue is full it drops encoded frames up to the next keyframe (keeping a queued keyframe and its dependants, D64) and forces one once it can send again, which is the second-choice behaviour in this text. The overflow path ran on a device in the D61 and D63 stall runs (V19l); its D64 form has unit and loopback tests and has not yet run on a device. |
 | 10 Keyframe requests | Implemented, including the rate limit. |
 | 11 Keepalive | Implemented, with the clock estimate described there. The 5 s silence timeout is unit-tested on the host and was exercised on a device on both sides by freezing one process at a time with the socket left open: each side noticed after 5.0 s, closed, and the stream resumed when the frozen side came back. A pulled cable did not need it; that arrived as a closed connection. |
 | 12 Errors and reconnection | Host reconnection with backoff implemented and exercised, including across a pulled USB cable, where it restores the adb forward before retrying. Malformed input ends the connection on both sides without a crash (unit-tested on both; not attacked on a device). The Extend-mode clause does not apply yet. |
-| 13 Input | Not implemented. |
+| 13 Input | Implemented (D81–D84) in both apps: shared vectors, host mapping and lifecycle tests, and a touch carried from the real Android link to the real host input path on one PC. Injection into Windows itself is not yet tested on hardware: the real injectors are built, not run. |
 
 Where the implementation differs from the text above, the text has been changed to say so in place.
 The one difference in *who does what* is outside this document: the plan for the experiment once

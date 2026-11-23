@@ -27,6 +27,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ExtendSpace.Core\ExtendSpace.Core.csproj" />
+    <ProjectReference Include="..\ExtendSpace.Media\ExtendSpace.Media.csproj" />
   </ItemGroup>
 
 </Project>

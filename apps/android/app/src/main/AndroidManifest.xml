@@ -1,7 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- No permissions are requested yet. INTERNET is added together with the first real transport. -->
+    <!-- The USB link is a local socket that adb forwards to and needs no permission. The Wi-Fi
+         transport (D74-D79) needs to listen on the local network (INTERNET), to advertise itself by
+         DNS-SD without the Wi-Fi driver filtering the PC's multicast queries
+         (CHANGE_WIFI_MULTICAST_STATE), and nothing else: no location, no nearby-devices permission.
+         It listens only while the user has the tablet waiting with Wi-Fi allowed, or pairing. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
     <application
         android:name=".ExtendSpaceApplication"
@@ -20,6 +26,10 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- The session screen (D66): opened only from the Connect screen, so not exported. -->
+        <activity
+            android:name=".ui.session.SessionActivity"
+            android:exported="false" />
     </application>
 
 </manifest>

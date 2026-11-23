@@ -60,4 +60,8 @@
     <string name="live_clock_known">Round trip %1$s ms, so latency figures are good to about %2$s ms either way</string>
     <string name="live_clock_unknown">Not yet known; latency cannot be worked out until the host has measured it</string>
     <string name="live_row_connections">Connections</string>
+
+    <!-- The production-session harness: the production controller, link and decoder, started by hand. -->
+    <string name="session_launcher_label">ExtendSpace session test</string>
+    <string name="session_banner">Production session (debug harness). State: %1$s</string>
 </resources>

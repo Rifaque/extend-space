@@ -29,7 +29,7 @@
             <Border Style="{StaticResource CardStyle}">
                 <StackPanel Spacing="8">
                     <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Application" />
-                    <ItemsControl ItemTemplate="{StaticResource EntryTemplate}" ItemsSource="{x:Bind ApplicationEntries}" />
+                    <ItemsControl ItemTemplate="{StaticResource EntryTemplate}" ItemsSource="{x:Bind ApplicationEntries, Mode=OneWay}" />
                 </StackPanel>
             </Border>
 
@@ -40,10 +40,17 @@
                 </StackPanel>
             </Border>
 
-            <TextBlock
-                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                Style="{StaticResource CaptionTextBlockStyle}"
-                Text="Stream statistics (resolution, frame rate, latency, dropped frames) will appear here once streaming exists." />
+            <Border Style="{StaticResource CardStyle}">
+                <StackPanel Spacing="8">
+                    <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Stream (updated every second)" />
+                    <ItemsControl ItemTemplate="{StaticResource EntryTemplate}" ItemsSource="{x:Bind StreamEntries, Mode=OneWay}" />
+                    <TextBlock
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        Text="Frame rates are measured where they happen: captured is what Windows delivered, sent is what reached the USB connection, and received and shown are the device's own report. A still screen sends few frames; that is not a fault."
+                        TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
         </StackPanel>
     </ScrollViewer>
 </Page>

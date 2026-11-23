@@ -9,10 +9,13 @@
             <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="Settings" />
 
             <Border Style="{StaticResource CardStyle}">
-                <TextBlock
-                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                    Text="There are no settings yet."
-                    TextWrapping="Wrap" />
+                <StackPanel Spacing="4">
+                    <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Wireless" />
+                    <TextBlock
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="{x:Bind WirelessText}"
+                        TextWrapping="Wrap" />
+                </StackPanel>
             </Border>
 
             <TextBlock
@@ -28,7 +31,7 @@
                     <TextBlock
                         Margin="0,8,0,0"
                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                        Text="Early development build. Connecting, mirroring and extending are not implemented yet."
+                        Text="Pre-release build. Mirrors a Windows display to an Android device over USB, or over Wi-Fi with a paired tablet; touches on the tablet can control the mirrored display when you turn input on. Extend mode is not implemented yet."
                         TextWrapping="Wrap" />
                 </StackPanel>
             </Border>

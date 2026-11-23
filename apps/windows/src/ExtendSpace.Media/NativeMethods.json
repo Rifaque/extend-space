@@ -1,0 +1,20 @@
+{
+  "$schema": "https://aka.ms/CsWin32.schema.json",
+  "public": false,
+  "comInterop": {
+    "preserveSigMethods": [
+      "IMFTransform.ProcessInput",
+      "IMFTransform.ProcessOutput",
+      "IMFTransform.GetOutputAvailableType",
+      "IMFMediaEventGenerator.GetEvent",
+      "ICodecAPI.IsSupported",
+      "ICodecAPI.SetValue",
+      "ICodecAPI.GetValue",
+      "IMFAttributes.GetUINT32",
+      "IMFAttributes.GetBlobSize",
+      "IMFAttributes.GetAllocatedString",
+      "IMFVideoSampleAllocator.AllocateSample",
+      "IMFVideoSampleAllocatorEx.AllocateSample"
+    ]
+  }
+}

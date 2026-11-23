@@ -24,6 +24,18 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- The production session (controller, USB link, MediaCodec receiver) with a surface lent to it.
+             Debug only: it is how the production path is exercised on a device while the release
+             build's Connect screen stays disabled. -->
+        <activity
+            android:name=".sessiontest.SessionDisplayActivity"
+            android:exported="true"
+            android:label="@string/session_launcher_label">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
     </application>
 
 </manifest>

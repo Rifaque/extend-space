@@ -1,0 +1,115 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:ExtendSpace.Core.ViewModels;assembly=ExtendSpace.Core"
+             x:Class="ExtendSpace.Host.Linux.Views.HomeView"
+             x:DataType="vm:ConnectViewModel">
+    <UserControl.DataTemplates>
+        <DataTemplate DataType="vm:ConnectOption">
+            <StackPanel Spacing="2" Margin="0,4">
+                <TextBlock Classes="title" Text="{Binding Title}" />
+                <TextBlock Classes="secondary" Text="{Binding Description}" />
+                <TextBlock Classes="secondary" FontSize="12" Foreground="#9D5D00" Text="{Binding StatusNote}" IsVisible="{Binding StatusNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            </StackPanel>
+        </DataTemplate>
+        <DataTemplate DataType="vm:DeviceOption">
+            <StackPanel Spacing="2" Margin="0,4">
+                <TextBlock Classes="title" Text="{Binding Title}" />
+                <TextBlock Classes="secondary" FontSize="12" Text="{Binding Detail}" />
+            </StackPanel>
+        </DataTemplate>
+        <DataTemplate DataType="vm:DisplayOption">
+            <StackPanel Spacing="2">
+                <TextBlock Text="{Binding Title}" />
+                <TextBlock Classes="secondary" FontSize="12" Text="{Binding Detail}" />
+            </StackPanel>
+        </DataTemplate>
+    </UserControl.DataTemplates>
+
+    <ScrollViewer Name="Scroller">
+        <StackPanel Margin="20" Spacing="12" MaxWidth="760">
+
+            <Border Classes="card">
+                <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="title" FontSize="20" Text="{Binding StatusTitle}" />
+                        <TextBlock Classes="secondary" Text="{Binding StatusDetail}" />
+                        <TextBlock Classes="secondary" Text="{Binding StreamHealth}" IsVisible="{Binding StreamHealth, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        <TextBlock Classes="secondary problem" Text="{Binding ConnectBlockedReason}" IsVisible="{Binding IsConnectBlocked}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Top">
+                        <Button Name="DisconnectButton" Content="Disconnect" IsVisible="{Binding CanDisconnect}" Click="OnDisconnectClick" />
+                        <Button Name="ConnectButton" Classes="accent" Content="Connect" IsEnabled="{Binding CanConnect}" Click="OnConnectClick" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <Border Classes="card" IsVisible="{Binding HasError}">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Classes="problem" Text="The last connection failed; the details are above." VerticalAlignment="Center" />
+                    <Button Content="Dismiss" Click="OnDismissErrorClick" />
+                </StackPanel>
+            </Border>
+
+            <Border Classes="card">
+                <StackPanel Spacing="6">
+                    <TextBlock Classes="title" Text="Connection" />
+                    <ListBox Name="TransportOptions" ItemsSource="{Binding TransportOptions}" IsEnabled="{Binding CanEditSelection}" SelectionMode="Single" />
+                </StackPanel>
+            </Border>
+
+            <Border Classes="card" IsVisible="{Binding ShowsDevices}">
+                <StackPanel Spacing="8">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <StackPanel Spacing="2">
+                            <TextBlock Classes="title" Text="Android device" />
+                            <TextBlock Classes="secondary" Text="{Binding DevicesStatus}" />
+                        </StackPanel>
+                        <Button Grid.Column="1" Content="Refresh" IsEnabled="{Binding CanEditSelection}" Click="OnRefreshDevicesClick" />
+                    </Grid>
+                    <ListBox Name="DeviceList" ItemsSource="{Binding Devices}" IsVisible="{Binding HasDevices}" IsEnabled="{Binding CanEditSelection}" SelectionMode="Single" MaxHeight="240" />
+                    <TextBlock Classes="secondary" Text="{Binding DeviceHint}" IsVisible="{Binding DeviceHint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding ShowsManualAddress}">
+                        <TextBox Name="ManualAddress" Watermark="Tablet address, for example 192.168.1.40" Width="300" />
+                        <Button Content="Add" Click="OnAddAddressClick" />
+                    </StackPanel>
+                    <TextBlock Classes="secondary problem" Text="{Binding ManualAddressError}" IsVisible="{Binding ManualAddressError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Content="Pair…" IsVisible="{Binding CanPair}" Click="OnPairClick" />
+                        <Button Content="Forget" IsVisible="{Binding CanForget}" Click="OnForgetClick" />
+                    </StackPanel>
+                    <TextBlock Classes="secondary" Text="{Binding PairingStatus}" IsVisible="{Binding PairingStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                </StackPanel>
+            </Border>
+
+            <Border Classes="card">
+                <StackPanel Spacing="6">
+                    <TextBlock Classes="title" Text="Mode" />
+                    <ListBox Name="ModeOptions" ItemsSource="{Binding ModeOptions}" IsEnabled="{Binding CanEditSelection}" SelectionMode="Single" />
+                </StackPanel>
+            </Border>
+
+            <Border Classes="card" IsVisible="{Binding ShowsExtendStatus}">
+                <StackPanel Spacing="6">
+                    <TextBlock Classes="title" Text="Extended display" />
+                    <TextBlock Classes="secondary" Classes.problem="{Binding ExtendIsProblem}" Text="{Binding ExtendStatusText}" />
+                </StackPanel>
+            </Border>
+
+            <Border Classes="card" IsVisible="{Binding ShowsDisplayChoice}">
+                <StackPanel Spacing="6">
+                    <TextBlock Classes="title" Text="Display to mirror" />
+                    <ComboBox Name="DisplayList" ItemsSource="{Binding Displays}" IsEnabled="{Binding CanEditSelection}" MinWidth="320" />
+                </StackPanel>
+            </Border>
+
+            <Border Classes="card" IsVisible="{Binding ShowsInput}">
+                <StackPanel Spacing="6">
+                    <TextBlock Classes="title" Text="Input from the tablet" />
+                    <ListBox Name="InputOptions" ItemsSource="{Binding InputOptions}" SelectionMode="Single" />
+                    <TextBlock Classes="secondary" Text="{Binding InputNote}" IsVisible="{Binding InputNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                </StackPanel>
+            </Border>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

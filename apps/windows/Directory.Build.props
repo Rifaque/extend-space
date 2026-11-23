@@ -6,6 +6,9 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Company>RSX Develops</Company>
     <Product>ExtendSpace</Product>
-    <Version>0.1.0</Version>
+    <!-- D71: the release version, the same on Windows and Android (docs/release/release-process.md).
+         VersionPrefix is what the host tells the device in hello; the suffix labels pre-releases. -->
+    <VersionPrefix>0.2.0</VersionPrefix>
+    <VersionSuffix>beta.1</VersionSuffix>
   </PropertyGroup>
 </Project>

@@ -1,0 +1,51 @@
+{
+  "description": "Pairing code vectors, transport architecture section 5. Computed with Python hashlib, independently of both apps; both test suites check their implementation against this file.",
+  "version": 1,
+  "cases": [
+    {
+      "name": "case1",
+      "host_nonce": "0714212e3b4855626f7c8996a3b0bdcad7e4f1fe0b1825323f4c596673808d9a",
+      "client_nonce": "0e1b2835424f5c697683909daab7c4d1deebf805121f2c394653606d7a8794a1",
+      "host_id": "15222f3c495663707d8a97a4b1becbd8e5f2ff0c192633404d5a6774818e9ba8",
+      "client_id": "1c293643505d6a7784919eabb8c5d2dfecf90613202d3a4754616e7b8895a2af",
+      "commitment": "88b3738a923a7d2224c628f04cee0a2510bdbee64b28f8b6d8c0e83d38337501",
+      "code": "544547"
+    },
+    {
+      "name": "case2",
+      "host_nonce": "4653606d7a8794a1aebbc8d5e2effc091623303d4a5764717e8b98a5b2bfccd9",
+      "client_nonce": "8c99a6b3c0cddae7f4010e1b2835424f5c697683909daab7c4d1deebf805121f",
+      "host_id": "d2dfecf90613202d3a4754616e7b8895a2afbcc9d6e3f0fd0a1724313e4b5865",
+      "client_id": "1825323f4c596673808d9aa7b4c1cedbe8f5020f1c293643505d6a7784919eab",
+      "commitment": "7d2c1fe969cbe7e484c21b07b77d01ab277c328ec36f8a1e560fba78889e3373",
+      "code": "475239"
+    },
+    {
+      "name": "case3",
+      "host_nonce": "000d1a2734414e5b6875828f9ca9b6c3d0ddeaf704111e2b3845525f6c798693",
+      "client_nonce": "000d1a2734414e5b6875828f9ca9b6c3d0ddeaf704111e2b3845525f6c798693",
+      "host_id": "000d1a2734414e5b6875828f9ca9b6c3d0ddeaf704111e2b3845525f6c798693",
+      "client_id": "000d1a2734414e5b6875828f9ca9b6c3d0ddeaf704111e2b3845525f6c798693",
+      "commitment": "6abbfc1343199ce553bbaddb04b168281b6615a2179f57c25b7a7f83c00af18f",
+      "code": "014363"
+    },
+    {
+      "name": "case4",
+      "host_nonce": "f90613202d3a4754616e7b8895a2afbcc9d6e3f0fd0a1724313e4b5865727f8c",
+      "client_nonce": "0714212e3b4855626f7c8996a3b0bdcad7e4f1fe0b1825323f4c596673808d9a",
+      "host_id": "808d9aa7b4c1cedbe8f5020f1c293643505d6a7784919eabb8c5d2dfecf90613",
+      "client_id": "1b2835424f5c697683909daab7c4d1deebf805121f2c394653606d7a8794a1ae",
+      "commitment": "ea34df70ea2e895975a75c8c6bed416f98332a2609406be703d813687c368867",
+      "code": "217387"
+    },
+    {
+      "name": "case5",
+      "host_nonce": "23303d4a5764717e8b98a5b2bfccd9e6f3000d1a2734414e5b6875828f9ca9b6",
+      "client_nonce": "23303d4a5764717e8b98a5b2bfccd9e6f3000d1a2734414e5b6875828f9ca9b6",
+      "host_id": "2a3744515e6b7885929facb9c6d3e0edfa0714212e3b4855626f7c8996a3b0bd",
+      "client_id": "2a3744515e6b7885929facb9c6d3e0edfa0714212e3b4855626f7c8996a3b0bd",
+      "commitment": "30ca0ba652fad6c3a7fdfc3f9f2f79c8a4ec5e581438c6a02505010988b7065b",
+      "code": "036625"
+    }
+  ]
+}

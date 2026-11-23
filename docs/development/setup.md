@@ -69,7 +69,11 @@ cd apps/android
   API 37. `minSdk` is 29 (Android 10).
 - Application ID `com.rsxdevelops.extendspace`. Change it before any public release if RSX Develops
   owns a different reverse-domain name; it cannot be changed after publishing.
-- The app requests no permissions yet.
+- Permissions: `INTERNET` and `CHANGE_WIFI_MULTICAST_STATE` since Phase 10, for the Wi-Fi transport
+  and its DNS-SD advertisement (manifest comment explains each). Nothing else.
+- `org.bouncycastle:bcpkix-jdk18on` is a `testImplementation` dependency only: the Wi-Fi TLS tests
+  build self-signed certificates on the desktop JVM, where AndroidKeyStore does not exist. The
+  release APK contains no Bouncy Castle class (checked with `dexdump`).
 - Debug builds contain two extra screens. "ExtendSpace decoder test" plays a `.h264` file captured
   by the Windows experiment through the device's H.264 decoder; how to use it is in
   [experiment 01](../architecture/streaming-experiment-01.md#reproduce). "ExtendSpace live test"
@@ -82,6 +86,25 @@ cd apps/android
   are stubs, so the tests bring a real implementation. Nothing is added to any APK.
 - Xiaomi HyperOS refuses `adb install` (`INSTALL_FAILED_USER_RESTRICTED`) until *Developer options →
   Install via USB* is switched on, on the device, by its owner.
+
+## Wireless and input tests (Phases 10–11)
+
+Run by the normal suites, no setup: codec, pairing-code vectors (`tests/pairing-vectors/`), touch
+vectors (`tests/input-vectors/`), trust and identity stores, discovery merging, routing, real TLS 1.3
+loopback tests on both sides (session, pin mismatch, `not_paired`, every pairing outcome), input
+mapping and lifecycle, and the input path over a loopback connection. Shared vectors were computed
+with Python independently of both apps.
+
+Gated (opt-in, because they reach outside the test process):
+
+| Variable | Test | What it does |
+| --- | --- | --- |
+| `EXTENDSPACE_DNSSD_TESTS=1` | `ExtendSpace.Media.Tests` `WirelessAdapterTests.The_browser_finds_a_service_advertised_on_this_PC` | Advertises a test DNS-SD service **on the LAN** for a few seconds and browses for it with the production watcher |
+| `EXTENDSPACE_INTEROP_DIR=<empty folder>` on **both** | Android `InteropTabletTest` and Windows `InteropHostTests` | The real Android endpoint and link (desktop JVM) and the real Windows pairing, transport, controller and input, on loopback: pairing with matching codes, a session over TLS, video, a touch. Start the Android side first, in the background: `gradlew.bat --offline testDebugUnitTest --tests "*InteropTabletTest" --rerun`, then `ExtendSpace.Core.Tests.exe -class ExtendSpace.Core.Tests.Wireless.InteropHostTests`. Results: `tablet.log`, `tablet-result` in the folder |
+
+Wireless state on the PC lives in `%LOCALAPPDATA%\ExtendSpace` (`identity.bin`, DPAPI-protected;
+`trusted-devices.json`, public key hashes only); deleting the folder resets pairing. On the tablet,
+*Clear storage* does the same.
 
 ## State of the development machine
 
@@ -190,6 +213,24 @@ Reliability and latency validation (Phase 2.4), 2026-10-13:
 | Final debug APK on the tablet | Installed and run: a 30 s 1080p60 stream, a stream ended from the tablet, a silent link on each side, and leaving the live screen with the host healthy and frozen. The soak, the cable pulls and the camera clip are from an earlier build of the same day. |
 | The app's own screens on the tablet | **Still not exercised.** |
 
+Phases 1–4 mission (D64 to D66), 2026-11-22, from `apps/windows` and `apps/android`:
+
+| Command | Result |
+| --- | --- |
+| `dotnet build ExtendSpace.slnx`, Debug and `-c Release` | 0 warnings, 0 errors |
+| `dotnet test --solution ExtendSpace.slnx`, before any change | 813: 792 passed, 0 failed, 21 skipped (gated) |
+| The same, after | 836: 815 passed, 0 failed, 21 skipped (gated) |
+| `gradlew testDebugUnitTest lintDebug assembleDebug assembleRelease`, before and after | 254, then 260 tests, 0 failures; lint: version notices only; both variants build |
+| Release APK, `dexdump` and `aapt2` | No experiment or harness classes; `MainActivity` and the unexported `SessionActivity` |
+| The Windows host started (Debug build) and read through UI Automation for about 5 s, nothing clicked | Window opened; the Android device card said "1 device found." and Connect was enabled with that device chosen; closed normally, exit code 0. No session was started |
+| The app's own screens on the tablet | **Not exercised in this mission** (ISSUES.md ES-030) |
+
+Phases 5–8 mission (D67 to D73), 2026-11-22: see [PROJECT_STATUS.md](../../PROJECT_STATUS.md)
+for the final figures. Additionally: the Windows package was built with
+`packaging/windows/Build-Package.ps1` and validated in scratch folders (install, launch, clean exit,
+upgrade, uninstall); the Android release APK with `packaging/android/Build-Apk.ps1`; release signing
+was proven with a throwaway key. No device was used.
+
 When more than one device is attached to adb (an emulator, say), `stream` needs `--device <serial>`
 and plain `adb` commands need `-s <serial>`. `adb reconnect` left the tablet absent from adb here
 until the adb server was restarted; avoid it as a way to simulate a disconnection.
@@ -210,3 +251,15 @@ the feed and was reverted.
 - No secrets, signing keys, keystores or certificates in the repository. `.gitignore` excludes the
   common file types as a backstop.
 - `local.properties` and other machine-specific files stay untracked.
+
+## Linux host (D96–D103)
+
+* Build and unit-test anywhere: `dotnet build apps/linux/ExtendSpace.Linux.slnx` and run
+  `apps/linux/tests/ExtendSpace.Linux.Tests/bin/Debug/net10.0/ExtendSpace.Linux.Tests` (Lab and E2E tests skip).
+* Lab tests on Linux: publish the tests `-r linux-x64 --self-contained`, then on a Linux machine with
+  GStreamer (base, good, ugly, x), Xvfb, xrandr and xdotool run them with `EXTENDSPACE_LINUX_LAB=1` and
+  `DISPLAY` set. In WSL without root the packages can be unpacked into a user folder with
+  `apt-get download` and `dpkg-deb -x`, with `LD_LIBRARY_PATH` and `GST_PLUGIN_SYSTEM_PATH` pointing there.
+* Tablet end to end: `EXTENDSPACE_LINUX_E2E=1 EXTENDSPACE_TABLET_ADDRESS=<ip>` runs
+  `TabletEndToEndTests` (pairing confirmed on the tablet; marker files in `EXTENDSPACE_E2E_DIR`).
+* Package: `packaging/linux/Build-LinuxPackage.ps1` (tarball + SHA-256; never overwrites).

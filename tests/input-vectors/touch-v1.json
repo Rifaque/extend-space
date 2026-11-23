@@ -1,0 +1,89 @@
+{
+  "description": "touch frames on the input channel (channel 2, type 1), input architecture section 2. Phases: 0 down, 1 move, 2 up, 3 cancel. Computed with Python struct, independently of both apps.",
+  "version": 1,
+  "cases": [
+    {
+      "name": "single_down",
+      "sequence": 0,
+      "contacts": [
+        {
+          "id": 0,
+          "phase": 0,
+          "x": 0,
+          "y": 0
+        }
+      ],
+      "payload": "00000000010000000000000000000000"
+    },
+    {
+      "name": "single_move_centre",
+      "sequence": 1,
+      "contacts": [
+        {
+          "id": 0,
+          "phase": 1,
+          "x": 32768,
+          "y": 32768
+        }
+      ],
+      "payload": "00000001010000000001800080000000"
+    },
+    {
+      "name": "two_fingers_second_down",
+      "sequence": 7,
+      "contacts": [
+        {
+          "id": 0,
+          "phase": 1,
+          "x": 1000,
+          "y": 2000
+        },
+        {
+          "id": 1,
+          "phase": 0,
+          "x": 65535,
+          "y": 65535
+        }
+      ],
+      "payload": "0000000702000000000103e807d000000100ffffffff0000"
+    },
+    {
+      "name": "lift_one_of_two",
+      "sequence": 8,
+      "contacts": [
+        {
+          "id": 0,
+          "phase": 1,
+          "x": 1000,
+          "y": 2000
+        },
+        {
+          "id": 1,
+          "phase": 2,
+          "x": 60000,
+          "y": 61000
+        }
+      ],
+      "payload": "0000000802000000000103e807d000000102ea60ee480000"
+    },
+    {
+      "name": "cancel_all",
+      "sequence": 4294967295,
+      "contacts": [
+        {
+          "id": 3,
+          "phase": 3,
+          "x": 10,
+          "y": 20
+        },
+        {
+          "id": 5,
+          "phase": 3,
+          "x": 30,
+          "y": 40
+        }
+      ],
+      "payload": "ffffffff020000000303000a001400000503001e00280000"
+    }
+  ]
+}

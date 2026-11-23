@@ -17,13 +17,19 @@ public sealed record SessionCapabilities(
 {
     /// <summary>
     /// The truth about the current build. Flip an entry only when the feature really works end to
-    /// end; the Connect button is enabled from this.
+    /// end; the Connect button is enabled from this. USB Mirror was enabled by D65, after the
+    /// production path streamed, recovered and soaked on the reference tablet (architecture
+    /// sections 19 and 20); what is still to be accepted on hardware is listed in ISSUES.md.
     /// </summary>
     public static SessionCapabilities CurrentBuild { get; } = new(
-        Usb: Availability.Unavailable("The USB transport is not implemented yet."),
-        Wireless: Availability.Unavailable("Wireless pairing and transport are not implemented yet."),
-        Mirror: Availability.Unavailable("Display capture and video streaming are not implemented yet."),
-        Extend: Availability.Unavailable("Extending requires the ExtendSpace virtual display driver, which does not exist yet."));
+        Usb: Availability.Available,
+        // D74–D80 (Phase 10): complete in code and tested over loopback TLS; hardware acceptance is
+        // W1–W8 in docs/quality/beta-acceptance.md.
+        Wireless: Availability.Available,
+        Mirror: Availability.Available,
+        // D87-D89: Extend streams a virtual monitor of the user-installed Virtual Display Driver. Whether
+        // one is ready is decided at run time from the display configuration (VirtualDisplayDetector).
+        Extend: Availability.Available);
 
     public Availability For(TransportKind transport) => transport switch
     {

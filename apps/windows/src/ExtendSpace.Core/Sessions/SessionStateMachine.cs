@@ -54,10 +54,23 @@ public sealed class SessionStateMachine
                 state with { Phase = SessionPhase.Negotiating },
 
             (SessionPhase.Negotiating, SessionEvent.NegotiationCompleted) =>
-                state with { Phase = SessionPhase.Streaming },
+                state with { Phase = SessionPhase.Streaming, HasStreamed = true, LastAttemptFault = null },
 
-            (SessionPhase.Streaming, SessionEvent.ConnectionLost) =>
-                state with { Phase = SessionPhase.Reconnecting },
+            // A failed attempt goes back to where attempts are made from: Connecting for a session
+            // that has never streamed, Reconnecting for one that has. Whether and when to try again
+            // is the coordinator's decision; nothing here retries.
+            (SessionPhase.Connecting or SessionPhase.Negotiating or SessionPhase.Reconnecting, SessionEvent.AttemptFailed { Fault.IsRetryable: true } failed) =>
+                state with
+                {
+                    Phase = state.HasStreamed ? SessionPhase.Reconnecting : SessionPhase.Connecting,
+                    LastAttemptFault = failed.Fault,
+                },
+
+            // The loss is recorded like a failed attempt, so that the state can say why the session
+            // is reconnecting before any attempt has failed. A terminal fault is refused, as for
+            // AttemptFailed: ending a session takes Failed.
+            (SessionPhase.Streaming, SessionEvent.ConnectionLost { Fault.IsRetryable: true } lost) =>
+                state with { Phase = SessionPhase.Reconnecting, LastAttemptFault = lost.Fault },
 
             (SessionPhase.Disconnecting, SessionEvent.TeardownCompleted) =>
                 SessionState.Disconnected,
@@ -67,7 +80,7 @@ public sealed class SessionStateMachine
 
             // The user can always disconnect an in-progress session, and anything in progress can fail.
             (_, SessionEvent.DisconnectRequested) when IsInProgress(state.Phase) =>
-                state with { Phase = SessionPhase.Disconnecting },
+                new SessionState(SessionPhase.Disconnecting, state.Request),
 
             (_, SessionEvent.Failed failed) when IsInProgress(state.Phase) =>
                 new SessionState(SessionPhase.Failed, state.Request, failed.Error),

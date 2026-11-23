@@ -47,6 +47,12 @@
                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                             Text="{x:Bind ViewModel.StatusDetail, Mode=OneWay}"
                             TextWrapping="Wrap" />
+                        <TextBlock
+                            Margin="0,4,0,0"
+                            Foreground="{x:Bind local:HomePage.HealthBrush(ViewModel.StreamHealthIsProblem), Mode=OneWay}"
+                            Text="{x:Bind ViewModel.StreamHealth, Mode=OneWay}"
+                            TextWrapping="Wrap"
+                            Visibility="{x:Bind local:HomePage.VisibleWhenNotEmpty(ViewModel.StreamHealth), Mode=OneWay}" />
                     </StackPanel>
 
                     <StackPanel
@@ -88,6 +94,150 @@
                 Severity="Informational"
                 Visibility="{x:Bind ViewModel.IsConnectBlocked, Mode=OneWay}" />
 
+            <Border Style="{StaticResource CardStyle}" Visibility="{x:Bind ViewModel.ShowsDevices}">
+                <StackPanel Spacing="8">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Android device" />
+                            <TextBlock
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Text="{x:Bind ViewModel.DevicesStatus, Mode=OneWay}"
+                                TextWrapping="Wrap" />
+                        </StackPanel>
+                        <Button
+                            Grid.Column="1"
+                            VerticalAlignment="Center"
+                            AutomationProperties.Name="Refresh the device list"
+                            Click="OnRefreshDevicesClick"
+                            IsEnabled="{x:Bind ViewModel.CanEditSelection, Mode=OneWay}"
+                            ToolTipService.ToolTip="Refresh">
+                            <FontIcon FontSize="14" Glyph="&#xE72C;" />
+                        </Button>
+                    </Grid>
+                    <ListView
+                        x:Name="DeviceList"
+                        IsEnabled="{x:Bind ViewModel.CanEditSelection, Mode=OneWay}"
+                        ItemsSource="{x:Bind ViewModel.Devices, Mode=OneWay}"
+                        SelectionChanged="OnDeviceSelectionChanged"
+                        SelectionMode="Single"
+                        Visibility="{x:Bind ViewModel.HasDevices, Mode=OneWay}">
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="vm:DeviceOption">
+                                <StackPanel Padding="0,6" Spacing="2">
+                                    <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="{x:Bind Title}" />
+                                    <TextBlock
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        Style="{StaticResource CaptionTextBlockStyle}"
+                                        Text="{x:Bind Detail}"
+                                        TextWrapping="Wrap" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                    <TextBlock
+                        Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                        Text="{x:Bind ViewModel.DeviceHint, Mode=OneWay}"
+                        TextWrapping="Wrap"
+                        Visibility="{x:Bind local:HomePage.VisibleWhenNotEmpty(ViewModel.DeviceHint), Mode=OneWay}" />
+                    <StackPanel
+                        Orientation="Horizontal"
+                        Spacing="8"
+                        Visibility="{x:Bind ViewModel.ShowsManualAddress, Mode=OneWay}">
+                        <TextBox
+                            x:Name="ManualAddress"
+                            MinWidth="220"
+                            AutomationProperties.Name="Tablet address"
+                            IsEnabled="{x:Bind ViewModel.CanEditSelection, Mode=OneWay}"
+                            PlaceholderText="Not listed? Tablet's IP address" />
+                        <Button
+                            AutomationProperties.Name="Add the tablet by address"
+                            Click="OnAddAddressClick"
+                            Content="Add"
+                            IsEnabled="{x:Bind ViewModel.CanEditSelection, Mode=OneWay}" />
+                    </StackPanel>
+                    <TextBlock
+                        Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                        Text="{x:Bind ViewModel.ManualAddressError, Mode=OneWay}"
+                        TextWrapping="Wrap"
+                        Visibility="{x:Bind local:HomePage.VisibleWhenNotEmpty(ViewModel.ManualAddressError), Mode=OneWay}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button
+                            AutomationProperties.Name="Pair with the chosen tablet"
+                            Click="OnPairClick"
+                            Content="Pair…"
+                            Visibility="{x:Bind ViewModel.CanPair, Mode=OneWay}" />
+                        <Button
+                            AutomationProperties.Name="Forget the chosen tablet"
+                            Click="OnForgetClick"
+                            Content="Forget"
+                            Visibility="{x:Bind ViewModel.CanForget, Mode=OneWay}" />
+                    </StackPanel>
+                    <TextBlock
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="{x:Bind ViewModel.PairingStatus, Mode=OneWay}"
+                        TextWrapping="Wrap"
+                        Visibility="{x:Bind local:HomePage.VisibleWhenNotEmpty(ViewModel.PairingStatus), Mode=OneWay}" />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardStyle}" Visibility="{x:Bind ViewModel.ShowsExtendStatus, Mode=OneWay}">
+                <StackPanel Spacing="4">
+                    <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Extended display" />
+                    <TextBlock
+                        Foreground="{x:Bind local:HomePage.HealthBrush(ViewModel.ExtendIsProblem), Mode=OneWay}"
+                        IsTextSelectionEnabled="True"
+                        Text="{x:Bind ViewModel.ExtendStatusText, Mode=OneWay}"
+                        TextWrapping="Wrap" />
+                    <TextBlock
+                        IsTextSelectionEnabled="True"
+                        Text="{x:Bind ViewModel.ModeAdviceText, Mode=OneWay}"
+                        TextWrapping="Wrap"
+                        Visibility="{x:Bind local:HomePage.VisibleWhenNotEmpty(ViewModel.ModeAdviceText), Mode=OneWay}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button
+                            Click="OnApplyModeClick"
+                            Content="{x:Bind ViewModel.ApplyRecommendedModeLabel, Mode=OneWay}"
+                            ToolTipService.ToolTip="Changes the virtual display only; your monitors keep their settings."
+                            Visibility="{x:Bind ViewModel.CanApplyRecommendedMode, Mode=OneWay}" />
+                        <Button
+                            Click="OnBringWindowsBackClick"
+                            Content="Bring windows back"
+                            ToolTipService.ToolTip="Moves windows on the virtual display to your main display."
+                            Visibility="{x:Bind ViewModel.CanBringWindowsBack, Mode=OneWay}" />
+                        <HyperlinkButton Content="Display settings" NavigateUri="ms-settings:display" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardStyle}" Visibility="{x:Bind ViewModel.ShowsDisplayChoice, Mode=OneWay}">
+                <StackPanel Spacing="8">
+                    <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Display to mirror" />
+                    <ComboBox
+                        x:Name="DisplayList"
+                        MinWidth="320"
+                        AutomationProperties.Name="Display to mirror"
+                        IsEnabled="{x:Bind ViewModel.CanEditSelection, Mode=OneWay}"
+                        ItemsSource="{x:Bind ViewModel.Displays, Mode=OneWay}"
+                        SelectionChanged="OnDisplaySelectionChanged">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:DisplayOption">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Text="{x:Bind Title}" />
+                                    <TextBlock
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        Style="{StaticResource CaptionTextBlockStyle}"
+                                        Text="{x:Bind Detail}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                </StackPanel>
+            </Border>
+
             <Grid ColumnSpacing="16">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
@@ -114,6 +264,24 @@
                         SelectionChanged="OnModeSelectionChanged" />
                 </Border>
             </Grid>
+
+            <Border Style="{StaticResource CardStyle}" Visibility="{x:Bind ViewModel.ShowsInput}">
+                <StackPanel Spacing="8">
+                    <RadioButtons
+                        x:Name="InputOptions"
+                        Header="Input from the tablet"
+                        ItemTemplate="{StaticResource OptionTemplate}"
+                        ItemsSource="{x:Bind ViewModel.InputOptions}"
+                        MaxColumns="3"
+                        SelectionChanged="OnInputSelectionChanged" />
+                    <TextBlock
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        Text="{x:Bind ViewModel.InputNote, Mode=OneWay}"
+                        TextWrapping="Wrap"
+                        Visibility="{x:Bind local:HomePage.VisibleWhenNotEmpty(ViewModel.InputNote), Mode=OneWay}" />
+                </StackPanel>
+            </Border>
         </StackPanel>
     </ScrollViewer>
 </Page>

@@ -4,4 +4,12 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="ExtendSpace.Core.Tests" />
+    <!-- For the video pipeline: Annex B scanning and the monotonic clock that capture times are on. -->
+    <InternalsVisibleTo Include="ExtendSpace.Media" />
+    <!-- The pipeline's integration tests drive the real connection with Core.Tests' loopback client. -->
+    <InternalsVisibleTo Include="ExtendSpace.Media.Tests" />
+  </ItemGroup>
+
 </Project>

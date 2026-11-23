@@ -8,6 +8,7 @@ import org.junit.Test
 
 class ConnectionStateMachineTest {
     private val lost = ConnectionError(ConnectionErrorCode.CONNECTION_LOST)
+    private val reset = SessionFault(FaultCategory.CONNECTION, "connection_reset", "The connection was reset.", FaultTreatment.RETRYABLE)
 
     private fun machineIn(vararg events: ConnectionEvent) = ConnectionStateMachine().apply {
         events.forEach { assertTrue("setup event $it was rejected", dispatch(it)) }
@@ -43,11 +44,11 @@ class ConnectionStateMachineTest {
     fun `losing the connection while streaming starts a reconnect that renegotiates`() {
         val machine = machineIn(*toStreaming)
 
-        assertTrue(machine.dispatch(ConnectionEvent.ConnectionLost))
-        assertEquals(ConnectionState.Reconnecting(TransportKind.USB), machine.state.value)
+        assertTrue(machine.dispatch(ConnectionEvent.ConnectionLost(reset)))
+        assertEquals(ConnectionState.Reconnecting(TransportKind.USB, reset), machine.state.value)
 
         assertTrue(machine.dispatch(ConnectionEvent.TransportConnected))
-        assertEquals(ConnectionState.Negotiating(TransportKind.USB), machine.state.value)
+        assertEquals(ConnectionState.Negotiating(TransportKind.USB, resuming = true, lastAttemptFault = reset), machine.state.value)
     }
 
     @Test
@@ -56,7 +57,7 @@ class ConnectionStateMachineTest {
             machineIn(connect),
             machineIn(connect, ConnectionEvent.TransportConnected),
             machineIn(*toStreaming),
-            machineIn(*toStreaming, ConnectionEvent.ConnectionLost),
+            machineIn(*toStreaming, ConnectionEvent.ConnectionLost(reset)),
         )
 
         inProgress.forEach { machine ->
@@ -111,13 +112,5 @@ class ConnectionStateMachineTest {
             ConnectionState.Disconnected,
             nextState(state, ConnectionEvent.TeardownCompleted),
         )
-    }
-
-    @Test
-    fun `idle controller reports disconnected with no hosts`() {
-        val controller = IdleConnectionController()
-
-        assertEquals(ConnectionState.Disconnected, controller.state.value)
-        assertTrue(controller.hosts.value.isEmpty())
     }
 }

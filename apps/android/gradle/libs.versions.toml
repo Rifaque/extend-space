@@ -7,6 +7,8 @@ lifecycle = "2.11.0"
 navigationCompose = "2.10.2"
 junit = "4.13.2"
 orgJson = "20260814"
+# Tests only: builds the certificates the Wi-Fi TLS tests use (nothing of it is in the app).
+bouncycastle = "1.80.2"
 
 [libraries]
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
@@ -20,6 +22,7 @@ androidx-compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling
 androidx-compose-material3 = { module = "androidx.compose.material3:material3" }
 junit = { module = "junit:junit", version.ref = "junit" }
 org-json = { module = "org.json:json", version.ref = "orgJson" }
+bouncycastle-bcpkix = { module = "org.bouncycastle:bcpkix-jdk18on", version.ref = "bouncycastle" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

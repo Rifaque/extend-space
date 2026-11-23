@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=ExtendSpace
+GenericName=Tablet display
+Comment=Use an Android tablet as a display for this PC
+Exec=@EXEC@
+Terminal=false
+Categories=Utility;
+Keywords=tablet;display;screen;mirror;extend;

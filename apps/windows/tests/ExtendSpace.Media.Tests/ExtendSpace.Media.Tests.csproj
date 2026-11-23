@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Matches the pipeline it tests. The pipeline's policy is tested against a scripted backend;
+         real capture and encoding run only in the tests gated by EXTENDSPACE_MEDIA_TESTS, and the
+         tablet only in those gated by EXTENDSPACE_DEVICE_TESTS. -->
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.22000.0</TargetPlatformMinVersion>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" Version="4.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ExtendSpace.Core\ExtendSpace.Core.csproj" />
+    <ProjectReference Include="..\..\src\ExtendSpace.Media\ExtendSpace.Media.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The Android app's side of the protocol over loopback, shared with the Core tests rather than copied. -->
+    <Compile Include="..\ExtendSpace.Core.Tests\Connection\LoopbackPeer.cs" Link="Shared\LoopbackPeer.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

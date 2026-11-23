@@ -1,0 +1,4 @@
+<Project>
+  <!-- D96: the Linux host shares the Windows host's language settings and release version (D71). -->
+  <Import Project="..\windows\Directory.Build.props" />
+</Project>

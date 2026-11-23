@@ -30,9 +30,9 @@ private class Feature(@StringRes val name: Int, val implemented: Boolean)
 private val features = listOf(
     Feature(R.string.feature_app_shell, implemented = true),
     Feature(R.string.feature_state_model, implemented = true),
-    Feature(R.string.feature_usb, implemented = false),
-    Feature(R.string.feature_wireless, implemented = false),
-    Feature(R.string.feature_video, implemented = false),
+    Feature(R.string.feature_usb, implemented = true),
+    Feature(R.string.feature_wireless, implemented = true),
+    Feature(R.string.feature_video, implemented = true),
 )
 
 @Composable

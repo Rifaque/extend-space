@@ -4,10 +4,12 @@
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/ExtendSpace.Core/ExtendSpace.Core.csproj" />
+    <Project Path="src/ExtendSpace.Media/ExtendSpace.Media.csproj" />
     <Project Path="src/ExtendSpace.Host/ExtendSpace.Host.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/ExtendSpace.Core.Tests/ExtendSpace.Core.Tests.csproj" />
+    <Project Path="tests/ExtendSpace.Media.Tests/ExtendSpace.Media.Tests.csproj" />
     <Project Path="tests/ExtendSpace.Experiments.CaptureEncode.Tests/ExtendSpace.Experiments.CaptureEncode.Tests.csproj" />
   </Folder>
 </Solution>

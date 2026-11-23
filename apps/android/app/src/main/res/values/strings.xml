@@ -5,10 +5,10 @@
     <string name="nav_about">About</string>
 
     <string name="connect_title">ExtendSpace</string>
-    <string name="connect_subtitle">Use this device as a display for Windows</string>
+    <string name="connect_subtitle">Use this device as a display for your PC</string>
 
     <string name="state_disconnected">Disconnected</string>
-    <string name="state_disconnected_detail">Not connected to a Windows host.</string>
+    <string name="state_disconnected_detail">Not connected to a PC.</string>
     <string name="state_connecting">Connecting</string>
     <string name="state_negotiating">Negotiating</string>
     <string name="state_streaming">Connected</string>
@@ -16,24 +16,47 @@
     <string name="state_disconnecting">Disconnecting</string>
     <string name="state_failed">Connection failed</string>
     <string name="state_via_usb">Over USB.</string>
-    <string name="state_via_wireless">Over the local network.</string>
 
     <string name="error_transport_unavailable">The connection to the host could not be opened.</string>
     <string name="error_authentication_failed">The host could not be authenticated.</string>
     <string name="error_incompatible_protocol">The host uses an incompatible protocol version.</string>
     <string name="error_negotiation_failed">The host and this device could not agree on stream settings.</string>
     <string name="error_connection_lost">The connection to the host was lost.</string>
+    <string name="error_decoder_unavailable">This device has no video decoder that can play the stream the host offered.</string>
     <string name="error_internal">An unexpected error occurred.</string>
 
-    <string name="hosts_title">Windows hosts</string>
-    <string name="hosts_empty_title">No hosts yet</string>
-    <string name="hosts_empty_detail">Paired and discovered Windows hosts will appear here. Pairing and discovery are not implemented in this build.</string>
+    <string name="connect_how_title">How to connect</string>
+    <string name="connect_how_detail">USB: turn on USB debugging in this device\'s developer options and connect it to the PC with a cable.\nWi-Fi: turn on Allow Wi-Fi connections below and pair once with Pair with a PC.\nThen tap Wait for PC, and on the PC open ExtendSpace, choose this device and select Connect.</string>
+    <string name="action_wait_for_pc">Wait for PC</string>
+    <string name="action_open_session">Open session</string>
+    <string name="wait_previous_not_released">The previous session is still closing. Try again in a moment.</string>
+
+    <string name="session_waiting_title">Waiting for your PC</string>
+    <string name="session_waiting_detail">On the PC, open ExtendSpace, choose this device and select Connect. Keep the USB cable connected and this screen open.</string>
+    <string name="session_starting_title">Starting the stream</string>
+    <string name="session_starting_detail">Your PC has connected. The picture will appear in a moment.</string>
+    <string name="session_reconnecting_title">Reconnecting</string>
+    <string name="session_reconnecting_detail">The connection to the PC was interrupted. Check the cable; ExtendSpace keeps trying for a short while.</string>
+    <string name="session_ending_title">Ending the session</string>
+    <string name="session_ending_detail">Closing the connection to the PC.</string>
+    <string name="session_ended_title">Session ended</string>
+    <string name="session_ended_detail">The session with the PC is over.</string>
+    <string name="session_streaming_hint">Mirroring your PC</string>
+    <string name="session_streaming_detail">Mirroring %1$s · %2$d × %3$d at %4$d fps</string>
+    <string name="session_extended_detail">Extended display of %1$s · %2$d × %3$d at %4$d fps</string>
+    <string name="session_action_cancel">Cancel</string>
+    <string name="session_action_end">End session</string>
+    <string name="session_action_wait_again">Wait again</string>
+    <string name="session_action_try_again">Try again</string>
+    <string name="session_action_close">Close</string>
+
+    <string name="hosts_title">PCs</string>
     <string name="host_transport_usb">USB</string>
     <string name="host_transport_wireless">Wireless</string>
 
     <string name="methods_title">Connection methods</string>
     <string name="method_usb_title">USB</string>
-    <string name="method_usb_detail">Started from ExtendSpace on Windows over a USB cable.</string>
+    <string name="method_usb_detail">Mirror your PC over a USB cable. Started from ExtendSpace on the PC (Windows or Linux).</string>
     <string name="method_wireless_title">Wireless</string>
     <string name="method_wireless_detail">Authenticated connection on your local network.</string>
     <string name="badge_not_implemented">Not implemented</string>
@@ -43,10 +66,33 @@
     <string name="about_version">Version %1$s</string>
     <string name="about_developer">Developed by RSX Develops</string>
     <string name="about_status_title">Build status</string>
-    <string name="about_status_intro">This is an early development build. Nothing below marked as not implemented will work yet.</string>
+    <string name="about_status_intro">This is a pre-release build. Anything below marked as not implemented does not work yet.</string>
     <string name="feature_app_shell">App shell and navigation</string>
     <string name="feature_state_model">Connection state model</string>
     <string name="feature_usb">USB transport</string>
     <string name="feature_wireless">Wireless pairing and transport</string>
-    <string name="feature_video">Video decoding and display</string>
+    <string name="feature_video">Video decoding and display (Mirror)</string>
+
+    <!-- Wi-Fi (D74-D79) -->
+    <string name="method_wireless_detail_on">Wait for PC also accepts paired PCs on this Wi-Fi network.</string>
+    <string name="method_wireless_detail_off">Turn on to let paired PCs connect over Wi-Fi.</string>
+    <string name="method_wireless_switch">Allow Wi-Fi connections</string>
+    <string name="state_via_usb_or_wifi">Over USB or Wi-Fi.</string>
+    <string name="state_via_wifi">Over Wi-Fi.</string>
+    <string name="session_waiting_detail_wifi">On the PC, open ExtendSpace, choose this tablet (USB or Wireless) and select Connect. Keep this screen open.</string>
+    <string name="session_reconnecting_detail_wifi">The connection to the PC was interrupted. Check that both are on the same Wi-Fi; ExtendSpace keeps trying for a short while.</string>
+    <string name="pair_action">Pair with a PC</string>
+    <string name="pair_waiting_title">Ready to pair</string>
+    <string name="pair_waiting_detail">On the PC, open ExtendSpace, choose Wireless, select \"%1$s\" and choose Pair. Both devices must be on the same Wi-Fi.</string>
+    <string name="pair_this_tablet_id">This tablet: %1$s</string>
+    <string name="pair_this_tablet_id_address">This tablet: %1$s · address %2$s (type it on the PC if the tablet is not listed)</string>
+    <string name="method_wireless_address">This tablet\'s address on this network: %1$s. If the PC does not list the tablet, type it there.</string>
+    <string name="pair_confirm_title">Pair with %1$s?</string>
+    <string name="pair_confirm_detail">Check that the PC shows the same code. Pair only if they match.</string>
+    <string name="pair_confirm_accept">Pair</string>
+    <string name="pair_cancel">Cancel</string>
+    <string name="pair_done">OK</string>
+    <string name="paired_title">Paired PCs</string>
+    <string name="paired_forget">Forget</string>
+    <string name="paired_detail">Can connect over Wi-Fi · %1$s</string>
 </resources>

@@ -1,5 +1,7 @@
 using System.Runtime.InteropServices;
+using ExtendSpace.Core.Sessions;
 using ExtendSpace.Host.Pages;
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media.Animation;
@@ -9,22 +11,7 @@ namespace ExtendSpace.Host;
 
 public sealed partial class MainWindow : Window
 {
-    // Sections that exist in the navigation but have no functionality yet.
-    private static readonly Dictionary<string, PlaceholderContent> Placeholders = new()
-    {
-        ["devices"] = new(
-            "Devices",
-            "",
-            "Paired and connected Android devices will be listed here. Pairing is not implemented yet."),
-        ["quality"] = new(
-            "Quality",
-            "",
-            "Resolution, frame rate and bitrate controls will live here once video streaming exists."),
-        ["display"] = new(
-            "Display",
-            "",
-            "Choosing which display to mirror, and arranging an extended display, will live here."),
-    };
+    private bool _closeAfterStop;
 
     public MainWindow()
     {
@@ -36,6 +23,25 @@ public sealed partial class MainWindow : Window
 
         // Raises SelectionChanged, which performs the first navigation.
         NavView.SelectedItem = NavView.MenuItems[0];
+
+        AppWindow.Closing += OnClosing;
+    }
+
+    // Closing with a session in progress ends the session first (D70): the device is told goodbye and
+    // the adb forward is removed, within the teardown's own bound, then the window closes.
+    private async void OnClosing(AppWindow sender, AppWindowClosingEventArgs args)
+    {
+        if (_closeAfterStop || !SessionShutdown.NeedsStop(App.Session.State.Phase))
+        {
+            return;
+        }
+
+        args.Cancel = true;
+        _closeAfterStop = true;
+        Title = "ExtendSpace: ending the session";
+        await SessionShutdown.StopAndWaitAsync(App.Session, SessionShutdown.DefaultBound);
+        App.Diagnostics.Dispose();
+        Close();
     }
 
     private void OnNavigationSelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
@@ -55,9 +61,6 @@ public sealed partial class MainWindow : Window
                     break;
                 case "diagnostics":
                     ContentFrame.Navigate(typeof(DiagnosticsPage), null, transition);
-                    break;
-                default:
-                    ContentFrame.Navigate(typeof(PlaceholderPage), Placeholders[tag], transition);
                     break;
             }
         }

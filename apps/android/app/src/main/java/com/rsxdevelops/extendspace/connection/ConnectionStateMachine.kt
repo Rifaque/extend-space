@@ -14,23 +14,40 @@ fun nextState(state: ConnectionState, event: ConnectionEvent): ConnectionState? 
         else -> null
     }
 
-    is ConnectionState.Connecting -> when (event) {
-        ConnectionEvent.TransportConnected -> ConnectionState.Negotiating(state.transport)
+    // A failed attempt goes back to where attempts are made from: Connecting for a session that has
+    // never streamed, Reconnecting for one that has. Whether and when to try again is the session
+    // controller's decision; nothing here retries.
+    is ConnectionState.Connecting -> when {
+        event == ConnectionEvent.TransportConnected ->
+            ConnectionState.Negotiating(state.transport, resuming = false, lastAttemptFault = state.lastAttemptFault)
+        event is ConnectionEvent.AttemptFailed ->
+            if (event.fault.isRetryable) ConnectionState.Connecting(state.transport, event.fault) else null
         else -> whileActive(event)
     }
 
-    is ConnectionState.Negotiating -> when (event) {
-        ConnectionEvent.NegotiationCompleted -> ConnectionState.Streaming(state.transport)
+    is ConnectionState.Negotiating -> when {
+        event == ConnectionEvent.NegotiationCompleted -> ConnectionState.Streaming(state.transport)
+        event is ConnectionEvent.AttemptFailed -> when {
+            !event.fault.isRetryable -> null
+            state.resuming -> ConnectionState.Reconnecting(state.transport, event.fault)
+            else -> ConnectionState.Connecting(state.transport, event.fault)
+        }
         else -> whileActive(event)
     }
 
-    is ConnectionState.Streaming -> when (event) {
-        ConnectionEvent.ConnectionLost -> ConnectionState.Reconnecting(state.transport)
+    // The loss is recorded like a failed attempt, so that the state can say why the session is
+    // reconnecting before any attempt has failed. A terminal fault is refused, as for AttemptFailed.
+    is ConnectionState.Streaming -> when {
+        event is ConnectionEvent.ConnectionLost ->
+            if (event.fault.isRetryable) ConnectionState.Reconnecting(state.transport, event.fault) else null
         else -> whileActive(event)
     }
 
-    is ConnectionState.Reconnecting -> when (event) {
-        ConnectionEvent.TransportConnected -> ConnectionState.Negotiating(state.transport)
+    is ConnectionState.Reconnecting -> when {
+        event == ConnectionEvent.TransportConnected ->
+            ConnectionState.Negotiating(state.transport, resuming = true, lastAttemptFault = state.lastAttemptFault)
+        event is ConnectionEvent.AttemptFailed ->
+            if (event.fault.isRetryable) ConnectionState.Reconnecting(state.transport, event.fault) else null
         else -> whileActive(event)
     }
 
