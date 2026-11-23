@@ -114,6 +114,7 @@ public sealed class ConnectViewModel : ObservableObject
     private string _devicesStatus = "Looking for Android devices…";
     private bool _devicesListed;
     private int _refreshing;
+    private readonly Input.IInputAvailability? _inputAvailability;
 
     public ConnectViewModel(
         ISessionControl session,
@@ -127,8 +128,10 @@ public sealed class ConnectViewModel : ObservableObject
         IVirtualDisplayCatalog? virtualDisplays = null,
         IVirtualDisplayModes? virtualDisplayModes = null,
         IWindowRescue? windowRescue = null,
-        Func<ClientCapabilities?>? lastClient = null)
+        Func<ClientCapabilities?>? lastClient = null,
+        Input.IInputAvailability? inputAvailability = null)
     {
+        _inputAvailability = inputAvailability;
         _virtualDisplays = virtualDisplays;
         _modes = virtualDisplayModes;
         _rescue = windowRescue;
@@ -138,8 +141,8 @@ public sealed class ConnectViewModel : ObservableObject
         InputOptions =
         [
             new("Off", "The tablet only shows the picture.", string.Empty),
-            new("Touch", "Touches on the tablet act as a touchscreen on the mirrored display.", string.Empty),
-            new("Mouse", "Tap to click, drag, hold for a right-click, two fingers to scroll.", string.Empty),
+            new("Touch", "Touches on the tablet act as a touchscreen on the mirrored display.", inputAvailability?.Unavailable(Input.InputMode.Touch) ?? string.Empty),
+            new("Mouse", "Tap to click, drag, hold for a right-click, two fingers to scroll.", inputAvailability?.Unavailable(Input.InputMode.Mouse) ?? string.Empty),
         ];
         if (wireless is not null)
         {
@@ -728,6 +731,16 @@ public sealed class ConnectViewModel : ObservableObject
         get => _input?.Mode ?? Input.InputMode.Off;
         set
         {
+            if (_input is not null && _input.Mode != value && _inputAvailability?.Unavailable(value) is { } reason)
+            {
+                // Refused: the list goes back to the mode in force, and the option says why.
+                _inputRefusal = reason;
+                OnPropertyChanged(nameof(SelectedInputMode));
+                OnPropertyChanged(nameof(InputNote));
+                return;
+            }
+
+            _inputRefusal = null;
             if (_input is not null && _input.Mode != value)
             {
                 _input.Mode = value;
@@ -737,11 +750,14 @@ public sealed class ConnectViewModel : ObservableObject
         }
     }
 
+    private string? _inputRefusal;
+
     /// <summary>What the user should know about the input choice now; null when nothing.</summary>
-    public string? InputNote => (Phase, SelectedInputMode) switch
+    public string? InputNote => _inputRefusal ?? (Phase, SelectedInputMode) switch
     {
         (_, Input.InputMode.Off) => null,
         (SessionPhase.Streaming, _) => "Applies to this connection if it started with input on; otherwise from the next connection.",
+        _ when _inputAvailability?.Note is { } note => note,
         _ => HostPlatform.IsWindows
             ? "Windows that run as administrator, and the sign-in and UAC screens, ignore input from the tablet."
             : "Your desktop may ask once to allow remote control. On an X11 session the tablet works as a mouse only.",

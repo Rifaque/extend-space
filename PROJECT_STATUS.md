@@ -6,8 +6,38 @@ the gate: [docs/quality/beta-acceptance.md](docs/quality/beta-acceptance.md). Ho
 [architecture overview](docs/architecture/overview.md) and
 [production session architecture, sections 21–22](docs/architecture/production-session-architecture.md#21-phases-14-flows-boundaries-and-what-changed).
 
-As of 2026-11-23, branch `main`, HEAD `8a9669f` plus all uncommitted work from stage 3 through the
-**Phase 9–11 mission** (D74–D86). Nothing of it has been committed.
+As of 2026-11-23, branch `main`: the CachyOS native validation work below is committed on top of
+`46f98e2`.
+
+## CachyOS native validation (2026-11-23)
+
+First native Linux run: CachyOS on the external SSD, **Hyprland 0.57.2 on Wayland** (not KDE; KDE and
+GNOME remain untested, ES-150), real Pad 7 over USB and Wi-Fi. Results and environment:
+[platform-acceptance.md, Phase A](docs/quality/platform-acceptance.md#phase-a-cachyos--run-2026-11-23-native-real-pad-7);
+issues ES-158 to ES-179; decisions D104–D107.
+
+| Feature on CachyOS + Hyprland | Initial | Final (hardware) |
+| --- | --- | --- |
+| Launch, UI | Worked; Touch wrongly offered, labels overlapped | Works; Touch explains why it is unavailable |
+| Mirror (USB, Wi-Fi) | Worked (consent dialog every time for the main display) | Works, 60 fps; dialog once per output |
+| Discovery, pairing, trusted devices | Untested natively | Works (Forget not run) |
+| USB, cable pull recovery | Untested natively | Works; recovers by itself (about 12 s including the pull) |
+| Extend | **Unavailable** ("run swaymsg create_output") | **Works**: tablet-shaped 1616 × 1080 at 60 Hz display, removed after |
+| Mouse | **None** (no RemoteDesktop portal) | **Works** (virtual pointer), smooth scrolling |
+| Touch | Offered but could not work | Not available on Hyprland (no safe mechanism); stated in the UI |
+| Latency | Host pipeline p95 537 ms (owner: "very high") | p95 5.5 ms (NVENC); owner confirmed |
+| Packaging | Could not be built on Linux; false warning | Built, installed, upgraded, uninstalled on CachyOS |
+
+| Check (CachyOS, end of mission) | Result |
+| --- | --- |
+| Linux tests (native) | **39: 34 passed, 0 failed, 5 skipped** (gated lab/E2E; hardware covered by the procedures). Start: 21 / 16 / 5 |
+| Shared Core tests (on Linux) | **641: 628 passed, 0 failed, 13 skipped**. At start 2 failed on Linux (Windows-only wording; pairing-decline reset, ES-171). One test is load-flaky on Linux (ES-177) |
+| Builds (Linux) | Debug and Release: 0 warnings, 0 errors |
+| Windows build/tests, Android build/tests | **Not run** (not buildable here; no JDK). Windows-facing changes are additive optional Core interfaces, default off |
+
+Linux classification: **Prototype → working on Hyprland** (Mirror, Extend, Mouse, USB, Wi-Fi verified on
+one machine). Not "fully supported": KDE, GNOME, X11 and Ubuntu are untested natively; several
+procedures were not run (ES-179).
 
 ## Windows completion and Linux host (2026-11-23)
 
@@ -20,7 +50,7 @@ As of 2026-11-23, branch `main`, HEAD `8a9669f` plus all uncommitted work from s
 
 Next: native Linux hardware testing — Phase A on CachyOS (external SSD, temporary), then Phase B on
 Ubuntu (same SSD; primary Linux validation afterwards). Results go in
-[platform-acceptance.md](docs/quality/platform-acceptance.md#native-linux-test-phases-planned); Linux
+[platform-acceptance.md](docs/quality/platform-acceptance.md#native-linux-test-phases); Linux
 desktop acceptance (ES-150), Linux USB (ES-154) and X11 Extend (ES-152) remain pending until then.
 
 | Check (2026-11-23, end of mission) | Result |

@@ -7,12 +7,14 @@ namespace ExtendSpace.Linux.Tests;
 
 public sealed class PipelineDescriptionTests
 {
+    private static EncoderChoice Encoder(string element) => PipelineDescription.Encoders.Single(e => e.Element == element);
+
     [Fact]
     public void An_X11_region_is_captured_scaled_and_encoded_with_x264_into_Annex_B_access_units()
     {
-        string text = PipelineDescription.Build(new CaptureSource.X11Region(":0", new ScreenRect(1920, 0, 1616, 1080)), 1616, 1080, 60, 12_000_000, PipelineDescription.Encoders[^1]);
+        string text = PipelineDescription.Build(new CaptureSource.X11Region(":0", new ScreenRect(1920, 0, 1616, 1080)), 1616, 1080, 60, 12_000_000, Encoder("x264enc"));
 
-        Assert.StartsWith("ximagesrc display-name=:0 startx=1920 starty=0 endx=3535 endy=1079 use-damage=false show-pointer=true ! videorate ! video/x-raw,framerate=60/1", text, StringComparison.Ordinal);
+        Assert.StartsWith("ximagesrc display-name=:0 startx=1920 starty=0 endx=3535 endy=1079 use-damage=false show-pointer=true ! videorate drop-only=true max-rate=60 ! videoconvert", text, StringComparison.Ordinal);
         Assert.Contains("format=I420,width=1616,height=1080", text, StringComparison.Ordinal);
         Assert.Contains("x264enc name=es_encoder tune=zerolatency speed-preset=ultrafast bitrate=12000 key-int-max=120 bframes=0", text, StringComparison.Ordinal);
         Assert.EndsWith("h264parse config-interval=-1 ! video/x-h264,stream-format=byte-stream,alignment=au,profile=constrained-baseline ! appsink name=es_sink sync=false max-buffers=4 drop=false emit-signals=false", text, StringComparison.Ordinal);
@@ -21,7 +23,7 @@ public sealed class PipelineDescriptionTests
     [Fact]
     public void A_portal_virtual_stream_offers_its_size_first_and_repeats_still_pictures()
     {
-        string text = PipelineDescription.Build(new CaptureSource.PipeWireNode(42, 77, 1616, 1080), 1616, 1080, 60, 12_000_000, PipelineDescription.Encoders[0]);
+        string text = PipelineDescription.Build(new CaptureSource.PipeWireNode(42, 77, 1616, 1080), 1616, 1080, 60, 12_000_000, Encoder("vah264enc"));
 
         Assert.StartsWith("pipewiresrc fd=42 path=77 do-timestamp=true keepalive-time=500 always-copy=true ! video/x-raw,width=1616,height=1080 ! ", text, StringComparison.Ordinal);
         Assert.Contains("format=NV12", text, StringComparison.Ordinal);
@@ -32,16 +34,22 @@ public sealed class PipelineDescriptionTests
     [Fact]
     public void Without_h264parse_the_encoders_own_byte_stream_goes_to_the_sink()
     {
-        string text = PipelineDescription.Build(new CaptureSource.X11Region(":0", new ScreenRect(0, 0, 640, 360)), 640, 360, 30, 2_000_000, PipelineDescription.Encoders[^1], parser: false);
+        string text = PipelineDescription.Build(new CaptureSource.X11Region(":0", new ScreenRect(0, 0, 640, 360)), 640, 360, 30, 2_000_000, Encoder("x264enc"), parser: false);
         Assert.DoesNotContain("h264parse", text, StringComparison.Ordinal);
         Assert.Contains("byte-stream=true ! video/x-h264,stream-format=byte-stream,alignment=au", text, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void Hardware_encoders_are_preferred_in_order_and_x264_is_the_fallback()
+    public void Encoders_are_preferred_by_measured_latency_and_one_can_be_forced()
     {
-        Assert.Equal("nvh264enc", PipelineDescription.ChooseEncoder(e => e is "nvh264enc" or "x264enc")!.Element);
-        Assert.Equal("x264enc", PipelineDescription.ChooseEncoder(e => e is "nvh264enc" or "x264enc", allowHardware: false)!.Element);
+        // ES-165: NVENC (about 3 ms), then x264 (about 1 ms, more CPU), then VA-API (about 67 ms from PipeWire).
+        Assert.Equal(["nvh264enc", "x264enc", "vah264enc", "vaapih264enc"], PipelineDescription.Encoders.Select(e => e.Element));
+        Assert.Equal("nvh264enc", PipelineDescription.ChooseEncoder(_ => true)!.Element);
+        Assert.Equal("x264enc", PipelineDescription.ChooseEncoder(e => e is "vah264enc" or "x264enc")!.Element);
+        Assert.Equal("vah264enc", PipelineDescription.ChooseEncoder(e => e is "vah264enc")!.Element);
+        Assert.Equal("x264enc", PipelineDescription.ChooseEncoder(_ => true, allowHardware: false)!.Element);
+        Assert.Equal("vah264enc", PipelineDescription.ChooseEncoder(_ => true, forced: "vah264enc")!.Element);
+        Assert.Null(PipelineDescription.ChooseEncoder(e => e != "vah264enc", forced: "vah264enc"));
         Assert.Null(PipelineDescription.ChooseEncoder(_ => false));
     }
 

@@ -8,8 +8,9 @@ namespace ExtendSpace.Linux.Portal;
 /// <param name="RemoteControl">True: also ask for pointer and touchscreen through the RemoteDesktop portal (input not Off).</param>
 public sealed record PortalRequest(bool Virtual, bool RemoteControl, string? RestoreToken = null);
 
-/// <summary>The started stream: PipeWire node, its size, and the token that skips the dialog next time.</summary>
-public sealed record PortalStream(uint NodeId, int Width, int Height, string? RestoreToken);
+/// <summary>The started stream: PipeWire node, its size, the token that skips the dialog next time, and
+/// the output it shows when the portal says (<c>mapping_id</c>: the output name on Hyprland and wlroots).</summary>
+public sealed record PortalStream(uint NodeId, int Width, int Height, string? RestoreToken, string? Output = null);
 
 /// <summary>A portal answered "no" or failed; the user cancelled the dialog when <see cref="Cancelled"/>.</summary>
 public sealed class PortalException(string message, bool cancelled = false) : Exception(message)
@@ -70,6 +71,34 @@ public sealed class DesktopPortal : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Whether the desktop offers the RemoteDesktop portal (GNOME and KDE do; Hyprland's and wlroots'
+    /// portals do not). Asking for it where it is missing fails the whole session (ES-160).
+    /// </summary>
+    public static async Task<bool> HasRemoteDesktopAsync(CancellationToken cancellation)
+    {
+        try
+        {
+            using var connection = new Connection(Address.Session!);
+            await connection.ConnectAsync().ConfigureAwait(false);
+            MessageBuffer message;
+            using (MessageWriter writer = connection.GetMessageWriter())
+            {
+                writer.WriteMethodCallHeader(destination: Destination, path: ObjectPath, @interface: "org.freedesktop.DBus.Properties", member: "Get", signature: "ss", flags: MessageFlags.None);
+                writer.WriteString("org.freedesktop.portal.RemoteDesktop");
+                writer.WriteString("version");
+                message = writer.CreateMessage();
+            }
+
+            uint version = await connection.CallMethodAsync(message, (m, _) => m.GetBodyReader().ReadVariantValue().GetUInt32(), null).WaitAsync(TimeSpan.FromSeconds(2), cancellation).ConfigureAwait(false);
+            return version > 0;
+        }
+        catch (Exception e) when (e is not OutOfMemoryException)
+        {
+            return false;
+        }
+    }
+
     /// <summary>Asks the desktop for a stream (shows its dialog unless the restore token is accepted).</summary>
     public static async Task<DesktopPortal> StartAsync(PortalRequest request, CancellationToken cancellation)
     {
@@ -111,6 +140,9 @@ public sealed class DesktopPortal : IAsyncDisposable
 
     /// <summary>Discrete wheel steps; axis 0 vertical, 1 horizontal.</summary>
     public void PointerAxisDiscrete(uint axis, int steps) => Notify("NotifyPointerAxisDiscrete", "oa{sv}ui", w => { w.WriteUInt32(axis); w.WriteInt32(steps); });
+
+    /// <summary>Smooth scroll in logical pixels (positive down / right); <paramref name="finish"/> ends the scroll.</summary>
+    public void PointerAxis(double dx, double dy, bool finish) => Notify("NotifyPointerAxis", "oa{sv}dd", w => { w.WriteDouble(dx); w.WriteDouble(dy); }, finish ? new Dictionary<string, VariantValue> { ["finish"] = true } : null);
 
     public void TouchDown(uint slot, double x, double y) => Notify("NotifyTouchDown", "oa{sv}uudd", w => { w.WriteUInt32(Stream!.NodeId); w.WriteUInt32(slot); w.WriteDouble(x); w.WriteDouble(y); });
 
@@ -195,6 +227,7 @@ public sealed class DesktopPortal : IAsyncDisposable
         VariantValue properties = first.GetItem(1);
         int width = 0;
         int height = 0;
+        string? output = null;
         for (int i = 0; i < properties.Count; i++)
         {
             KeyValuePair<VariantValue, VariantValue> entry = properties.GetDictionaryEntry(i);
@@ -204,13 +237,18 @@ public sealed class DesktopPortal : IAsyncDisposable
                 width = size.GetItem(0).GetInt32();
                 height = size.GetItem(1).GetInt32();
             }
+            else if (entry.Key.GetString() == "mapping_id")
+            {
+                VariantValue id = entry.Value.Type == VariantValueType.Variant ? entry.Value.GetVariantValue() : entry.Value;
+                output = id.Type == VariantValueType.String ? id.GetString() : null;
+            }
         }
 
         string? restore = results.TryGetValue("restore_token", out VariantValue token) ? token.GetString() : null;
-        return new PortalStream(node, width, height, restore);
+        return new PortalStream(node, width, height, restore, output);
     }
 
-    private void Notify(string member, string signature, Action<MessageWriter> arguments)
+    private void Notify(string member, string signature, Action<MessageWriter> arguments, Dictionary<string, VariantValue>? options = null)
     {
         if (!CanControl)
         {
@@ -222,7 +260,7 @@ public sealed class DesktopPortal : IAsyncDisposable
         {
             writer.WriteMethodCallHeader(destination: Destination, path: ObjectPath, @interface: "org.freedesktop.portal.RemoteDesktop", member: member, signature: signature, flags: MessageFlags.NoReplyExpected);
             writer.WriteObjectPath(_session!);
-            writer.WriteDictionary(new Dictionary<string, VariantValue>());
+            writer.WriteDictionary(options ?? new Dictionary<string, VariantValue>());
             arguments(writer);
             message = writer.CreateMessage();
         }

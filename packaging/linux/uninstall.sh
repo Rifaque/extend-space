@@ -4,7 +4,7 @@
 set -eu
 PREFIX=${EXTENDSPACE_PREFIX:-$HOME/.local}
 DATA=${XDG_DATA_HOME:-$HOME/.local/share}
-rm -f "$PREFIX/bin/extendspace" "$DATA/applications/extendspace.desktop"
+rm -f "$PREFIX/bin/extendspace" "$DATA/applications/extendspace.desktop" "$DATA/icons/hicolor/scalable/apps/extendspace.svg"
 rm -rf "$PREFIX/opt/extendspace"
 if [ "${1:-}" = "--purge" ]; then
     rm -rf "$DATA/ExtendSpace"

@@ -152,7 +152,12 @@ an insecure PIN scheme, a copied connection controller and a second input socket
 implemented it on both apps without changing the USB path's behaviour. Exit criteria and their
 evidence: research sections 16–17 and PROJECT_STATUS.md.
 
-**Recommended next milestone (after the Windows completion and Linux mission):** run the Linux owner
+**Recommended next milestone (after the CachyOS mission):** Phase B on Ubuntu (GNOME, Wayland and
+X11): the portal RemoteDesktop/VIRTUAL paths that CachyOS + Hyprland could not exercise (ES-150), the
+procedures not run on CachyOS (ES-179), and the VA-API latency question (ES-173). CachyOS Phase A is
+done: [platform-acceptance.md](docs/quality/platform-acceptance.md#phase-a-cachyos--run-2026-11-23-native-real-pad-7).
+
+Earlier recommendation (after the Windows completion and Linux mission): run the Linux owner
 procedure on a GNOME and a KDE machine (ES-150), then Flatpak (ES-153) and a Secret Service identity
 store (ES-151). Windows: owner checks of right-click/scroll and sleep/wake; signing (ES-060).
 
@@ -160,6 +165,8 @@ store (ES-151). Windows: owner checks of right-click/scroll and sleep/wake; sign
 | --- | --- |
 | Windows completion (W-M1 to W-M6) | Done where measurable: [windows-completion.md](docs/research/windows-completion.md) |
 | Linux host (L-M1 to L-M10) | Prototype: [linux-host-research.md](docs/research/linux-host-research.md), [architecture](docs/architecture/linux-host-architecture.md) |
+| Linux native Phase A (CachyOS, Hyprland) | **Done 2026-11-23**: Mirror, Extend, Mouse, USB, Wi-Fi verified on hardware (D104–D107) |
+| Linux native Phase B (Ubuntu) | Next |
 
 Earlier: **Recommended next milestone (updated after the Extend mission): tablet-shaped virtual display modes
 (ES-140) with a lifecycle that does not leave an invisible monitor (ES-141)**, then the remaining W, T and

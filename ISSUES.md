@@ -7,8 +7,39 @@ in [ROADMAP.md](ROADMAP.md). Decisions are in
 [docs/architecture/decision-log.md](docs/architecture/decision-log.md); the V-numbered device tests
 in [architecture section 18.12](docs/architecture/production-session-architecture.md#1812-device-acceptance-procedure).
 
-Last updated 2026-11-23, end of the Phase 9–11 mission. Hardware procedures H1–H13 referred to below
+Last updated 2026-11-23, end of the CachyOS native validation mission. Hardware procedures H1–H13 referred to below
 are in [docs/quality/beta-acceptance.md](docs/quality/beta-acceptance.md).
+
+## CachyOS native validation mission (2026-11-23)
+
+Native CachyOS on the external SSD, **Hyprland 0.57.2 on Wayland** (not KDE), real Pad 7 over USB and
+Wi-Fi. Environment and results: [platform-acceptance.md, Phase A](docs/quality/platform-acceptance.md#phase-a-cachyos--run-2026-11-23-native-real-pad-7).
+P-levels: P0 security/data loss, P1 major function broken, P2 significant usability/reliability, P3 minor.
+
+| ID | Title | P | Root cause | Fix | Retest |
+| --- | --- | --- | --- | --- | --- |
+| ES-158 | ~~Extend unavailable on Hyprland ("wlroots: run swaymsg create_output")~~ | P1 | Linux Extend relied on the portal's VIRTUAL source; xdph advertises it but only shows its usual picker | D105: Hyprland headless output `EXTENDSPACE-1`, tablet-sized at 60 Hz, captured as a monitor through the portal, removed after | **PASS** on hardware: windows moved onto it, shown on the tablet |
+| ES-159 | ~~No mouse input on Hyprland~~ | P1 | Input used only the RemoteDesktop portal, which xdph lacks | D104: the compositor's `zwlr_virtual_pointer_v1` (pure C# Wayland client, bound to the streamed output; no uinput, no root) | **PASS** USB and Wi-Fi (284 and 467 frames) |
+| ES-160 | ~~Input on asks for a RemoteDesktop session the portal does not have, failing the whole connection~~ | P1 | RemoteDesktop requested whenever input was on | Requested only where the portal offers it (probed at start) | Hardware: sessions with Mouse start |
+| ES-161 | ~~A failed acquisition leaves the Extend output (ghost display) until the app exits~~ | P1 | Capture released only after acquisition succeeded | `GstVideoPipeline` releases what it made on any acquisition failure; leftovers removed at start | Live: removed 5 ms after the failure |
+| ES-162 | ~~First Extend after a start is 1920 × 1080, not tablet-shaped~~ | P2 | The display is made before the handshake tells the tablet's shape | Last tablet's screen remembered (`last-tablet.json`) | Hardware: 1616 × 1080 at 60 Hz |
+| ES-163 | ~~App exits without a word in the log; host not disposed on window close~~ | P2 | No exit/crash logging; disposal only on Avalonia `ShutdownRequested` | Logs crash, unobserved task failure and exit; disposal on `Exit` | Seen: "shutdown requested / exited (code 0)" |
+| ES-164 | ~~A second instance removes the first one's Extend display~~ | P1 | No single-instance guard; leftover cleanup at start | Per-user `flock` lock; second start refused (exit 2, logged) | Installed package: refused |
+| ES-165 | ~~High latency (owner: "latency is very high")~~ | P1 | `vah264enc` holds about 67 ms (4 frames) when fed from PipeWire (2–3 ms from a test source; cause inside the VA encoder not found) | Encoders ordered by measured latency: NVENC, x264, VA-API; `EXTENDSPACE_ENCODER` override | Tracer p95 537 ms → 5.5 ms; owner confirmed |
+| ES-166 | ~~Latency spikes up to 0.5 s on a mostly still screen~~ | P1 | `videorate` duplicating holds each picture until the next (keepalive 500 ms) | `videorate drop-only` | Tracer; owner confirmed still screen fine |
+| ES-167 | ~~Main display's restore token never used; wrong output silently mirrored~~ | P2 | Main display is requested without a name; portal output not checked | Main resolved to its output name on Hyprland; per-output tokens; a different output from the dialog refused (D68) | Lab: "restored without the dialog" |
+| ES-168 | ~~Two-finger scroll jumps in 48 px notches~~ | P2 | Core quantised scrolling to wheel notches | D107: optional `IPreciseScrollInjector`; Wayland finger-axis / portal smooth axis; Windows unchanged | Owner confirmed smooth |
+| ES-169 | ~~Touch offered on Hyprland/X11 where it cannot work~~ | P2 | Fixed input list | D106: `IInputAvailability`; Touch shows why and cannot be chosen | UI on hardware |
+| ES-170 | ~~Linux package cannot be built on Linux; false "ximagesrc missing" on Wayland; no icon~~ | P2 | PowerShell + Windows `tar.exe`; check ignored the session | `build-package.sh`; session-aware check; Arch/CachyOS line; SVG icon | Build, install, upgrade, uninstall, purge |
+| ES-171 | ~~Declining pairing on the PC can reset the connection before the tablet reads "declined"~~ | P3 | Socket closed with the tablet's answer unread → RST on Linux | Graceful TLS close on decline | Core test, 3 runs |
+| ES-172 | ~~Diagnostics labels run under their values~~ | P3 | 220 px column | Wider, wrapping label column | Visual |
+| ES-173 | VA-API encoder adds about 67 ms only with PipeWire input | Medium | Open | Avoided by encoder order (ES-165); investigate upstream | Tracer |
+| ES-174 | `hyprland-share-picker` crashed twice (SIGABRT, SIGSEGV) while picking | Low | Third party (xdph) | Per-output restore tokens avoid the picker after the first time | coredumpctl |
+| ES-175 | Mode, input and transport choices are not remembered across restarts | Low | Not implemented | — | — |
+| ES-176 | ExtendSpace's window overlapped the terminal in Hyprland's tiling (XWayland window) | Low | Unclear (Avalonia over XWayland in dwindle) | Workaround: move it to another workspace | Observed |
+| ES-177 | `HostConnectionControllerTests` overflow/keyframe test fails now and then under full-suite load on Linux | Low | Test timing assumes the writer is still blocked | — (6/6 alone) | Pre-existing |
+| ES-178 | A second start only prints to stderr; it does not raise the running window | Low | Not implemented | — | — |
+| ES-179 | Not run natively: manual IP, Forget/revocation, declining the dialog, killed process mid-session, sleep/wake, tablet restart, network change, 10-minute soak | Medium | Time/owner | Owner procedure (Phase A rows) | NOT RUN |
 
 ## Windows completion and Linux host mission (2026-11-23)
 

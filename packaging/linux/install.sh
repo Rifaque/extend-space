@@ -8,6 +8,7 @@ PREFIX=${EXTENDSPACE_PREFIX:-$HOME/.local}
 APP=$PREFIX/opt/extendspace
 BIN=$PREFIX/bin
 APPS=${XDG_DATA_HOME:-$HOME/.local/share}/applications
+ICONS=${XDG_DATA_HOME:-$HOME/.local/share}/icons/hicolor/scalable/apps
 
 if [ "$(id -u)" = "0" ]; then
     echo "Run this as your own user, not as root: ExtendSpace installs into your home folder." >&2
@@ -16,7 +17,7 @@ fi
 
 echo "Installing ExtendSpace $(cat "$HERE/VERSION") to $APP"
 rm -rf "$APP.new"
-mkdir -p "$APP.new" "$BIN" "$APPS"
+mkdir -p "$APP.new" "$BIN" "$APPS" "$ICONS"
 cp -R "$HERE/app/." "$APP.new/"
 chmod 755 "$APP.new/extendspace"
 rm -rf "$APP.old"
@@ -27,6 +28,7 @@ cp "$HERE/uninstall.sh" "$APP/uninstall.sh"
 chmod 755 "$APP/uninstall.sh"
 ln -sf "$APP/extendspace" "$BIN/extendspace"
 sed "s|@EXEC@|$APP/extendspace|" "$HERE/extendspace.desktop" > "$APPS/extendspace.desktop"
+[ -f "$HERE/extendspace.svg" ] && cp "$HERE/extendspace.svg" "$ICONS/extendspace.svg"
 command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$APPS" >/dev/null 2>&1 || true
 
 # Dependency check (read-only).
@@ -35,8 +37,13 @@ has_element() { command -v gst-inspect-1.0 >/dev/null 2>&1 && gst-inspect-1.0 --
 command -v gst-inspect-1.0 >/dev/null 2>&1 || missing="$missing gstreamer"
 if command -v gst-inspect-1.0 >/dev/null 2>&1; then
     has_element x264enc || has_element vah264enc || has_element vaapih264enc || has_element nvh264enc || missing="$missing h264-encoder"
-    has_element ximagesrc || missing="$missing ximagesrc"
-    has_element pipewiresrc || missing="$missing pipewiresrc"
+    has_element videoconvert && has_element appsink || missing="$missing gstreamer-base-plugins"
+    # Capture: PipeWire through the desktop portal on Wayland, ximagesrc on X11. Only the session's own is needed.
+    if [ -n "${WAYLAND_DISPLAY:-}" ] || [ "${XDG_SESSION_TYPE:-}" = "wayland" ]; then
+        has_element pipewiresrc || missing="$missing pipewiresrc"
+    else
+        has_element ximagesrc || missing="$missing ximagesrc"
+    fi
 fi
 command -v adb >/dev/null 2>&1 || missing="$missing adb"
 
@@ -48,6 +55,7 @@ if [ -n "$missing" ]; then
     echo "Install them with your package manager, for example:"
     echo "  Debian/Ubuntu/Mint: sudo apt install gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly gstreamer1.0-x gstreamer1.0-pipewire adb"
     echo "  Fedora:             sudo dnf install gstreamer1-plugins-good gstreamer1-plugins-ugly-free pipewire-gstreamer android-tools"
-    echo "  Arch:               sudo pacman -S gst-plugins-good gst-plugins-ugly gst-plugin-pipewire android-tools"
+    echo "  Arch, CachyOS:      sudo pacman -S gst-plugins-base gst-plugin-pipewire gst-plugin-va gst-plugins-ugly gst-plugins-bad android-tools android-udev"
+    echo "                      (add gst-plugins-good on an X11 session)"
     echo "adb is needed for USB only; Wi-Fi works without it."
 fi

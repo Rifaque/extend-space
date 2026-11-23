@@ -543,3 +543,38 @@ the next format (ES-153).
 **Status:** decided; implemented; **verified on the real network** (found the tablet at its new DHCP
 address in 3 s). Shares UDP 5353 with any daemon and hears multicast answers; falls back to one-shot
 queries. Used by the Linux host; Windows keeps its DNS-SD API (D95).
+
+## D104: Mouse on Hyprland and wlroots through the compositor's virtual pointer
+
+**Status:** decided; implemented; **hardware-verified on Hyprland 0.57.2** (USB and Wi-Fi). Where the
+desktop portal has no RemoteDesktop (xdg-desktop-portal-hyprland), Mouse mode uses
+`zwlr_virtual_pointer_manager_v1` version 2 through a minimal pure C# Wayland wire client
+(`Wayland/WaylandWire.cs`): a pointer bound to the streamed output (the portal's `mapping_id`), made at
+the first input and destroyed at the end of the session after releasing any held button. No uinput, no
+root, no device node. It is an ordinary client request: no dialog asks, so it is used only while input
+is on and a session runs, and the UI says so (D106).
+
+## D105: Extend on Hyprland is a session headless output captured as a monitor
+
+**Status:** decided; implemented; **hardware-verified**. xdph advertises the VIRTUAL source but creates
+nothing. ExtendSpace runs `hyprctl output create headless EXTENDSPACE-1`, sets the tablet's mode at
+60 Hz with a runtime monitor rule (Lua `hl.monitor` on 0.53+, `keyword monitor` before), placed
+`auto-right`, and captures it through the ScreenCast portal (the user consents once; per-output restore
+tokens skip the dialog afterwards). Removed when the session ends or acquisition fails; outputs named
+`EXTENDSPACE-*` left by a crash are removed at start; one instance per user (ES-164). Nothing is
+written to the user's configuration. Sway is not covered (untested).
+
+## D106: A host can say an input mode cannot work there
+
+**Status:** decided; implemented in Core (optional `IInputAvailability`) and on Linux. The option shows
+the reason and cannot be chosen; Windows passes nothing and keeps every mode. Touch needs the
+RemoteDesktop portal; Mouse needs that, a virtual pointer or XTest.
+
+## D107: Smooth scrolling where the platform takes it
+
+**Status:** decided; implemented; owner-confirmed on Hyprland. A mouse injector may implement
+`IPreciseScrollInjector`; two-finger scrolling then sends every movement of the fingers' centre in
+pixels (and the end of the scroll) instead of 48 px wheel notches. Linux: portal `NotifyPointerAxis`
+(with `finish`), virtual-pointer finger axis with `axis_stop`, divided by the output scale; X11 keeps
+notches. Windows is unchanged.
+

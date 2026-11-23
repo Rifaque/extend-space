@@ -36,6 +36,34 @@ public interface IMouseInjector
     void Wheel(int vertical, int horizontal);
 }
 
+/// <summary>
+/// Optional on an <see cref="IMouseInjector"/> (D107): two-finger scrolling by the pixel, as a
+/// touchpad scrolls, instead of whole wheel notches. Implemented where the desktop takes smooth
+/// scrolling (Wayland); without it, scrolling goes through <see cref="IMouseInjector.Wheel"/>.
+/// </summary>
+public interface IPreciseScrollInjector
+{
+    /// <param name="vertical">Pixels the fingers moved down; positive scrolls the view towards the top (as <see cref="IMouseInjector.Wheel"/>).</param>
+    /// <param name="horizontal">Pixels the fingers moved left; positive scrolls the view towards the right.</param>
+    void ScrollPixels(double vertical, double horizontal);
+
+    /// <summary>The fingers lifted: the scroll is over (kinetic scrolling may follow in the application).</summary>
+    void ScrollEnd();
+}
+
+/// <summary>
+/// Which input modes the host can deliver (D106). Windows has every mode; a Linux desktop may lack a
+/// way to inject touch (Hyprland, X11) or any input at all. Optional: without it every mode is offered.
+/// </summary>
+public interface IInputAvailability
+{
+    /// <summary>Why <paramref name="mode"/> cannot work here, shown on the option; null when it can.</summary>
+    string? Unavailable(InputMode mode);
+
+    /// <summary>What to know before input is turned on; null for the host's default note.</summary>
+    string? Note { get; }
+}
+
 /// <summary>Finds the mirrored monitor's rectangle now (D83).</summary>
 public interface IMonitorLocator
 {
@@ -479,6 +507,10 @@ internal sealed class MouseGestures(IMouseInjector mouse, Func<long> nowMillis)
         {
             mouse.Button(MouseButton.Left, down: false);
         }
+        else if (_stage == Stage.Scrolling && mouse is IPreciseScrollInjector precise)
+        {
+            precise.ScrollEnd();
+        }
 
         _stage = Stage.Idle;
         _fingers.Clear();
@@ -525,6 +557,20 @@ internal sealed class MouseGestures(IMouseInjector mouse, Func<long> nowMillis)
     private void Scroll()
     {
         (double x, double y) = Centroid();
+        if (mouse is IPreciseScrollInjector precise)
+        {
+            // D107: every movement of the fingers' centre scrolls by as much, at once.
+            double dy = y - _centroid.Y;
+            double dx = _centroid.X - x;
+            _centroid = (x, y);
+            if (dy != 0 || dx != 0)
+            {
+                precise.ScrollPixels(dy, dx);
+            }
+
+            return;
+        }
+
         _wheelY += y - _centroid.Y;
         _wheelX -= x - _centroid.X;
         _centroid = (x, y);
@@ -565,6 +611,11 @@ internal sealed class MouseGestures(IMouseInjector mouse, Func<long> nowMillis)
 
         if (_fingers.Count == 0)
         {
+            if (_stage == Stage.Scrolling && mouse is IPreciseScrollInjector precise)
+            {
+                precise.ScrollEnd();
+            }
+
             _stage = Stage.Idle;
         }
         else if (_stage is Stage.Pending or Stage.Dragging && id == _primary)

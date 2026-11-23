@@ -53,43 +53,64 @@ automated tests only; **NOT RUN**; **OWNER**. Earlier results: [beta-acceptance.
 4. Input Touch: tap and drag on the tablet act on the virtual display only. Input Mouse: same as a mouse.
 5. Record failures with `~/.local/share/ExtendSpace/host.log`.
 
-## Native Linux test phases (planned)
+## Native Linux test phases
 
 Earlier Linux results above are **Lab** (WSL2 + Xvfb), not a native desktop. Native results are recorded
 per phase, per distribution, so a distribution-specific failure is not mistaken for a general Linux one.
 Fill the environment block first; a result without it does not count.
 
-### Phase A: CachyOS (external SSD, temporary, about 2–3 days)
+### Phase A: CachyOS — run 2026-11-23 (native, real Pad 7)
+
+Native results on real hardware, recorded separately from the WSL Lab results above. Baseline commit
+`46f98e2`; fixes from this run are in the commit that follows it ("validate and stabilize CachyOS
+support"). **The desktop is Hyprland, not KDE**: nothing here says anything about KDE or GNOME (ES-150
+stays open).
 
 | Environment | Value |
 | --- | --- |
-| Distribution / version | |
-| Kernel | |
-| Desktop (KDE Plasma / GNOME / other) and version | |
-| Display server (Wayland / X11) | |
-| xdg-desktop-portal and backend versions | |
-| PipeWire, GStreamer versions; H.264 encoder used (Diagnostics shows it) | |
-| GPU and driver | |
-| ExtendSpace commit / package | |
+| Distribution / version | CachyOS (rolling, Arch-based), booted from the external SSD |
+| Kernel | 7.3.5-2-cachyos |
+| CPU | Intel Core Ultra 7 255HX |
+| Desktop and version | **Hyprland 0.57.2** (Lua configuration), dwindle layout |
+| Display server | Wayland (XWayland present; Avalonia runs through it) |
+| Monitors | eDP-1 2560 × 1600 at 165 Hz, scale 1.6; HDMI-A-1 2560 × 1440 at 143.9 Hz, scale 1.25 |
+| Portals | xdg-desktop-portal 1.22.1; backend **xdg-desktop-portal-hyprland 1.5.0** (ScreenCast, Screenshot, GlobalShortcuts, InputCapture — **no RemoteDesktop**); ScreenCast AvailableSourceTypes 7 |
+| PipeWire / WirePlumber | 1.6.11 / 0.5.19 |
+| GStreamer | 1.28.9: base-libs, bad, ugly, libav, plugin-va, plugin-pipewire (no gst-plugins-good: ximagesrc absent, not needed on Wayland) |
+| GPU and driver | Intel Arrow Lake iGPU (i915, mesa 26.3.1, intel-media-driver 26.3.5) + NVIDIA RTX 5060 Laptop (driver 620.73.04) |
+| H.264 encoders present | nvh264enc, vah264enc, x264enc (encoder used after ES-165: **NVENC**) |
+| .NET | SDK 10.0.114, runtime 10.0.14 (Arch `dotnet-sdk`); Avalonia 11.3.23 |
+| adb | 1.0.41 (android-tools 37.0.0p1), `android-udev` rules (uaccess; no group change, no root) |
+| Network | Host wired (2.5 GbE USB adapter), tablet on Wi-Fi, same private /24 home LAN; ufw firewall active |
+| Tablet | Xiaomi Pad 7 (2410CRP4CI), Android 16, 3200 × 2136, ExtendSpace 0.2.0-beta.1 (versionCode 20001) |
 
-| # | Check | Result (PASS / FAIL / NOT RUN) | Notes, log excerpt |
+| # | Check | Result | Notes, evidence |
 | --- | --- | --- | --- |
-| A1 | Install from the tarball, launch; About names the session correctly | | |
-| A2 | Wi-Fi discovery lists the tablet | | |
-| A3 | Add by address (manual IP) | | |
-| A4 | Pairing (codes match), trusted device listed; Forget works | | |
-| A5 | Mirror over Wi-Fi: consent dialog, picture, 10-minute stability | | |
-| A6 | Display selection (X11: list; Wayland: dialog) | | |
-| A7 | Extend: virtual display created, window moved onto it, removed on disconnect | | |
-| A8 | Mouse: tap, drag, right-click (hold), two-finger scroll | | |
-| A9 | Touch (Wayland portal): tap, drag; nothing on other displays | | |
-| A10 | USB (adb installed, device authorised): Mirror | | |
-| A11 | Resolution and refresh (Diagnostics: stream size, frames per second) | | |
-| A12 | Disconnect / reconnect; tablet "Wait again" | | |
-| A13 | Permission handling: decline the dialog → clear message; allow → works | | |
-| A14 | Logs (`~/.local/share/ExtendSpace/host.log`) and Diagnostics figures present | | |
-| A15 | Crash recovery: kill the app mid-session; tablet ends cleanly; restart and reconnect | | |
-| A16 | Uninstall (data kept; `--purge` removes it) | | |
+| A1 | Install from the tarball, launch; session named correctly | **PASS** (after fixes) | Package built on Linux with the new `build-package.sh` (12 s), SHA-256 verified; installed to a throwaway prefix; launched: "ExtendSpace 0.2.0 on Hyprland (Wayland)"; icon and menu entry installed. The PowerShell builder could not run on Linux and the installer reported `ximagesrc` missing on Wayland: fixed |
+| A2 | Wi-Fi discovery lists the tablet | **PASS** | Portable mDNS through ufw: answer from the tablet in 1.1 s; "Not paired · ready to pair" |
+| A3 | Add by address (manual IP) | NOT RUN | Discovery found the tablet; the address path was not exercised natively |
+| A4 | Pairing (codes match), trusted device stored; Forget | **PASS** / Forget NOT RUN | Codes 070 819 matched on both sides; TLS pairing stored `trusted-devices.json`; host refused Connect before pairing ("Pair … first") |
+| A5 | Mirror over Wi-Fi | **PASS** | eDP-1, 60 fps sent/received/shown; tablet render latency mean 33–42 ms (p95 41–55 ms); round trip 2.7–8.9 ms; one Wi-Fi stall recovered by itself in about 4 s; 467 mouse frames handled |
+| A6 | Display selection (Wayland: dialog) | **PASS** (after fixes) | List from Hyprland's outputs, named as the portal names them (`mapping_id`); per-output restore tokens skip the dialog; a different output picked in the dialog is refused (ES-167) |
+| A7 | Extend: virtual display created, window moved onto it, removed on disconnect | **PASS** (new on Hyprland) | Headless output `EXTENDSPACE-1`, **1616 × 1080 at 60 Hz** (the Pad 7's shape), right of the physical outputs, which did not move; windows moved onto it and shown on the tablet; output and its workspace removed on disconnect (600 ms) |
+| A8 | Mouse: tap, drag, right-click (hold), two-finger scroll | **PASS** (owner-confirmed after fixes) | Through the compositor's virtual-pointer protocol on the shared output (no portal exists): click/drag over USB and Wi-Fi; scrolling smooth by the pixel after D107 |
+| A9 | Touch | **BLOCKED by the desktop** | xdph has no RemoteDesktop portal and Hyprland no virtual-touch protocol; ExtendSpace does not use uinput. The option now says so and cannot be chosen (D106) |
+| A10 | USB Mirror | **PASS** | adb authorised on the tablet; 58 fps captured/sent, 52–53 shown; render latency mean 25 ms; round trip 2.8 ms; forward removed on disconnect |
+| A11 | Resolution and refresh | **PASS** | Mirror 2560 × 1600 → 1920 × 1080 stream; Extend 1616 × 1080 at 60 Hz, 60 fps end to end; first Extend after a restart is tablet-shaped (ES-162) |
+| A12 | Disconnect / reconnect | **PASS** | USB cable pulled for 5 s: lost 15:04:14, streaming again 15:04:26 without action; Disconnect leaves no forward, no capture node, CPU 0.5 % |
+| A13 | Permission handling (decline the dialog) | NOT RUN | — |
+| A14 | Logs and Diagnostics | **PASS** (after fixes) | Diagnostics labels overlapped their values: fixed; input paths shown; exit and crash causes now logged (ES-163) |
+| A15 | Crash recovery | **PARTIAL** | A failed acquisition left the Extend output until exit: fixed (ES-161), verified live (removed 5 ms after the failure); leftover outputs are removed at start (unit-tested); a killed process mid-session was not run |
+| A16 | Uninstall (data kept; `--purge` removes it) | **PASS** | Upgrade over an install kept data; uninstall removed binary, menu entry and icon, kept data; `--purge` removed data |
+
+**Measured host pipeline latency** (GStreamer latency tracer, capture → appsink, moving content on the
+real PipeWire stream, 1080p60): before — videorate duplicating, VA-API first — median 80 ms, p95
+537 ms, CPU 47 %; VA-API alone holds 67 ms; after (ES-165, ES-166) — **NVENC p95 5.5 ms**, 59.9 fps,
+CPU 27 %. x264 zerolatency: p95 6.0 ms at 69 % CPU.
+
+**Not run here:** Windows build and tests (not buildable on Linux; shared Core tests ran), Android build
+and tests (no JDK on this machine), sleep/wake, tablet restart, host network change, decline dialog,
+Forget/revocation, 10-minute soak, KDE, GNOME, X11.
 
 ### Phase B: Ubuntu (same SSD, reinstalled; primary validation environment afterwards)
 

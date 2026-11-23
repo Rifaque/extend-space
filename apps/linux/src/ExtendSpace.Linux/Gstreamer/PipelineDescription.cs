@@ -28,17 +28,27 @@ public static class PipelineDescription
     public const string SinkName = "es_sink";
     public const string EncoderName = "es_encoder";
 
-    /// <summary>Hardware encoders first, in this order, then x264. Only ones the system has are used.</summary>
+    /// <summary>
+    /// The encoders by measured latency (ES-165, CachyOS 2026-11-23, real PipeWire capture at 1080p60):
+    /// NVENC holds a frame about 3 ms; x264 (zerolatency, ultrafast) about 1 ms at more CPU; the VA-API
+    /// encoders about 67 ms (four frames) when fed from PipeWire, which users feel as lag. Only the ones
+    /// the system has are used; <see cref="EncoderVariable"/> picks one explicitly (for example VA-API
+    /// to save power).
+    /// </summary>
     public static readonly IReadOnlyList<EncoderChoice> Encoders =
     [
-        new("vah264enc", true, "VA-API H.264 (vah264enc)"),
-        new("vaapih264enc", true, "VA-API H.264 (vaapih264enc)"),
         new("nvh264enc", true, "NVENC H.264"),
         new("x264enc", false, "x264 (software)"),
+        new("vah264enc", true, "VA-API H.264 (vah264enc)"),
+        new("vaapih264enc", true, "VA-API H.264 (vaapih264enc)"),
     ];
 
-    public static EncoderChoice? ChooseEncoder(Func<string, bool> available, bool allowHardware = true) =>
-        Encoders.FirstOrDefault(e => (allowHardware || !e.IsHardware) && available(e.Element));
+    /// <summary>Names one encoder element to use instead of the automatic order (troubleshooting, measurements).</summary>
+    public const string EncoderVariable = "EXTENDSPACE_ENCODER";
+
+    /// <param name="forced">An element name from <see cref="EncoderVariable"/>; only that encoder is then considered.</param>
+    public static EncoderChoice? ChooseEncoder(Func<string, bool> available, bool allowHardware = true, string? forced = null) =>
+        Encoders.FirstOrDefault(e => (allowHardware || !e.IsHardware) && available(e.Element) && (string.IsNullOrEmpty(forced) || e.Element == forced));
 
     /// <param name="parser">Whether <c>h264parse</c> (gst-plugins-bad) is installed. Without it the encoder's own
     /// byte stream is used: x264 repeats SPS and PPS before every IDR by default.</param>
@@ -69,7 +79,9 @@ public static class PipelineDescription
         string profile = encoder.Element == "x264enc" ? ",profile=constrained-baseline" : string.Empty;
 
         return string.Create(CultureInfo.InvariantCulture,
-            $"{capture} ! videorate ! video/x-raw,framerate={fps}/1 ! videoconvert ! videoscale add-borders=true ! video/x-raw,format={format},width={width},height={height},pixel-aspect-ratio=1/1 ! queue max-size-buffers=2 leaky=downstream ! {encode} ! {(parser ? "h264parse config-interval=-1 ! " : string.Empty)}video/x-h264,stream-format=byte-stream,alignment=au{profile} ! appsink name={SinkName} sync=false max-buffers=4 drop=false emit-signals=false");
+            // videorate only drops (ES-166): duplicating made it hold each picture until the next arrived,
+            // up to the 500 ms keepalive on a still screen, so the last change of a movement came late.
+            $"{capture} ! videorate drop-only=true max-rate={fps} ! videoconvert ! videoscale add-borders=true ! video/x-raw,format={format},width={width},height={height},pixel-aspect-ratio=1/1 ! queue max-size-buffers=2 leaky=downstream ! {encode} ! {(parser ? "h264parse config-interval=-1 ! " : string.Empty)}video/x-h264,stream-format=byte-stream,alignment=au{profile} ! appsink name={SinkName} sync=false max-buffers=4 drop=false emit-signals=false");
     }
 }
 

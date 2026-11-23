@@ -564,3 +564,65 @@ public sealed class InputOverConnectionTests : IDisposable
         }
     }
 }
+
+/// <summary>D107: a mouse injector that scrolls by the pixel gets the fingers' movement as it happens.</summary>
+public sealed class PreciseScrollTests : IDisposable
+{
+    private static readonly object Stream = new();
+    private readonly PreciseMouse _mouse = new();
+    private uint _sequence;
+    private readonly HostInput _input;
+
+    private sealed class PreciseMouse : IMouseInjector, IPreciseScrollInjector
+    {
+        public List<string> Events { get; } = [];
+
+        public void Move(ScreenPoint point) => Events.Add($"move {point.X},{point.Y}");
+
+        public void Button(MouseButton button, bool down) => Events.Add($"{button} {(down ? "down" : "up")}");
+
+        public void Wheel(int vertical, int horizontal) => Events.Add($"wheel {vertical},{horizontal}");
+
+        public void ScrollPixels(double vertical, double horizontal) => Events.Add($"scroll {vertical:0},{horizontal:0}");
+
+        public void ScrollEnd() => Events.Add("scroll end");
+    }
+
+    public PreciseScrollTests()
+    {
+        _input = new HostInput(new FixedMonitor(new ScreenRect(0, 0, 1920, 1080)), () => new RecordingTouch(), _mouse, () => null, nowMillis: () => 1_000, autoTick: false) { Mode = InputMode.Mouse };
+        _input.BeginStream(Stream, 1920, 1080);
+    }
+
+    public void Dispose() => _input.Dispose();
+
+    private void Send(params TouchContact[] contacts) => _input.Handle(Stream, new TouchFrame(_sequence++, contacts));
+
+    private static TouchContact C(byte id, TouchPhase phase, int x, int y) =>
+        new(id, phase, (ushort)Math.Round(x * 65535.0 / 1919), (ushort)Math.Round(y * 65535.0 / 1079));
+
+    [Fact]
+    public void Every_movement_scrolls_at_once_without_whole_notches_and_the_end_is_told()
+    {
+        Send(C(0, TouchPhase.Down, 500, 500));
+        Send(C(0, TouchPhase.Move, 500, 500), C(1, TouchPhase.Down, 600, 500));
+        Send(C(0, TouchPhase.Move, 500, 510), C(1, TouchPhase.Move, 600, 510));
+        Send(C(0, TouchPhase.Move, 500, 530), C(1, TouchPhase.Move, 600, 530));
+        Send(C(0, TouchPhase.Move, 470, 530), C(1, TouchPhase.Move, 570, 530));
+        Send(C(0, TouchPhase.Up, 470, 530), C(1, TouchPhase.Up, 570, 530));
+
+        // 10 px and 20 px down (each less than a 48 px notch), then 30 px left; no wheel notches at all.
+        Assert.Equal(["scroll 10,0", "scroll 20,0", "scroll 0,30", "scroll end"], _mouse.Events);
+    }
+
+    [Fact]
+    public void Turning_input_off_mid_scroll_ends_the_scroll()
+    {
+        Send(C(0, TouchPhase.Down, 500, 500));
+        Send(C(0, TouchPhase.Move, 500, 500), C(1, TouchPhase.Down, 600, 500));
+        Send(C(0, TouchPhase.Move, 500, 540), C(1, TouchPhase.Move, 600, 540));
+        _input.Mode = InputMode.Off;
+
+        Assert.Equal(["scroll 40,0", "scroll end"], _mouse.Events);
+    }
+}

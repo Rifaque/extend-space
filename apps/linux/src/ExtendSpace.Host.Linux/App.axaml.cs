@@ -20,13 +20,25 @@ public sealed class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
+        // A process that ends must say why in the log (ES-163): a crash, an unobserved task failure, or a normal exit.
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => Log($"crash: {e.ExceptionObject}");
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            Log($"unobserved task failure: {e.Exception.GetBaseException()}");
+            e.SetObserved();
+        };
         Host = LinuxHost.Create(Version, Log);
         Log($"ExtendSpace {Version} on {Host.Environment.Describe}");
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             var window = new MainWindow();
             desktop.MainWindow = window;
-            desktop.ShutdownRequested += (_, _) => Host.Dispose();
+            desktop.ShutdownRequested += (_, _) => Log("shutdown requested");
+            desktop.Exit += (_, e) =>
+            {
+                Host.Dispose();
+                Log($"exited (code {e.ApplicationExitCode})");
+            };
         }
 
         Host.Diagnostics.Start();

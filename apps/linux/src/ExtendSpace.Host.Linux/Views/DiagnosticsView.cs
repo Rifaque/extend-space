@@ -25,6 +25,9 @@ public sealed class DiagnosticsView : UserControl
             ("Desktop", App.Host.Environment.Describe),
             ("Runtime", System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription),
             ("Log", App.LogPath),
+            ("Input paths", App.Host.Environment.Server == ExtendSpace.Linux.DisplayServer.X11
+                ? "XTest (mouse)"
+                : $"Remote-desktop portal: {(App.Host.InputSupport.RemoteDesktopPortal ? "yes" : "no")} · virtual pointer: {(App.Host.InputSupport.VirtualPointer ? "yes" : "no")}"),
         })
         {
             facts.Children.Add(Row(name, value));
@@ -67,10 +70,12 @@ public sealed class DiagnosticsView : UserControl
 
     private static Control Row(string name, string value) => new Grid
     {
-        ColumnDefinitions = new ColumnDefinitions("220,*"),
+        // The label column is wide enough for the longest label; a label that still does not fit wraps
+        // instead of running under its value.
+        ColumnDefinitions = new ColumnDefinitions("300,*"),
         Children =
         {
-            new TextBlock { Text = name, Opacity = 0.75 },
+            new TextBlock { Text = name, Opacity = 0.75, TextWrapping = Avalonia.Media.TextWrapping.Wrap, Margin = new Avalonia.Thickness(0, 0, 12, 0) },
             new SelectableTextBlock { Text = value, TextWrapping = Avalonia.Media.TextWrapping.Wrap, [Grid.ColumnProperty] = 1 },
         },
     };

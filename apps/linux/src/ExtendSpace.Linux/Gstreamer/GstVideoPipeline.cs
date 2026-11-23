@@ -93,15 +93,36 @@ public sealed class GstVideoPipeline(ICaptureSourceProvider sources, Func<string
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
         {
+            await ReleaseAfterFailureAsync().ConfigureAwait(false);
             return AttemptOutcome<VideoSourceDescription>.Cancelled;
         }
         catch (CaptureUnavailableException e)
         {
+            log?.Invoke($"capture: {e.Code}: {e.Message}");
+            await ReleaseAfterFailureAsync().ConfigureAwait(false);
             return AttemptOutcome<VideoSourceDescription>.Failed(new SessionFault(FaultCategory.Capture, e.Code, e.Message, FaultTreatment.Terminal, UserActionable: true));
         }
         catch (Exception e) when (e is not OutOfMemoryException)
         {
+            log?.Invoke($"capture: failed: {e}");
+            await ReleaseAfterFailureAsync().ConfigureAwait(false);
             return AttemptOutcome<VideoSourceDescription>.Failed(new SessionFault(FaultCategory.Capture, "capture_unavailable", $"The display could not be acquired: {e.Message}", FaultTreatment.Terminal));
+        }
+    }
+
+    /// <summary>
+    /// A failed acquisition must not leave what it made half-way (a portal session, a virtual output):
+    /// the session never reaches the point where it releases the source itself (ES-161).
+    /// </summary>
+    private async Task ReleaseAfterFailureAsync()
+    {
+        try
+        {
+            await sources.ReleaseAsync().ConfigureAwait(false);
+        }
+        catch (Exception e) when (e is not OutOfMemoryException)
+        {
+            log?.Invoke($"capture: release after failure failed: {e.Message}");
         }
     }
 
@@ -115,7 +136,7 @@ public sealed class GstVideoPipeline(ICaptureSourceProvider sources, Func<string
 
         foreach (bool hardware in new[] { true, false })
         {
-            EncoderChoice? encoder = PipelineDescription.ChooseEncoder(_hasElement, hardware);
+            EncoderChoice? encoder = PipelineDescription.ChooseEncoder(_hasElement, hardware, Environment.GetEnvironmentVariable(PipelineDescription.EncoderVariable));
             if (encoder is null)
             {
                 continue;

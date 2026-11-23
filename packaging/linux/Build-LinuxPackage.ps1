@@ -18,7 +18,7 @@ New-Item -ItemType Directory -Force (Join-Path $root 'app') | Out-Null
 try {
     & dotnet publish (Join-Path $repo 'apps\linux\src\ExtendSpace.Host.Linux') -c Release -r linux-x64 --self-contained -o (Join-Path $root 'app') -nologo -v q
     if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed with exit code $LASTEXITCODE" }
-    foreach ($file in 'install.sh', 'uninstall.sh', 'extendspace.desktop') {
+    foreach ($file in 'install.sh', 'uninstall.sh', 'extendspace.desktop', 'extendspace.svg') {
         # LF line endings: the scripts run under /bin/sh.
         $text = (Get-Content -Raw (Join-Path $PSScriptRoot $file)) -replace "`r`n", "`n"
         [IO.File]::WriteAllText((Join-Path $root $file), $text)

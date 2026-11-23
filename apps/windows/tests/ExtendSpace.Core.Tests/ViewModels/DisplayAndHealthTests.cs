@@ -72,7 +72,7 @@ public sealed class DisplayAndHealthTests
 
         Assert.Null(viewModel.SelectedDisplay);
         Assert.False(viewModel.CanConnect);
-        Assert.Equal("Windows reports no display to mirror.", viewModel.DeviceHint);
+        Assert.Equal($"{HostPlatform.Name} reports no display to mirror.", viewModel.DeviceHint);
     }
 
     [Fact]

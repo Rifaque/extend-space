@@ -177,6 +177,10 @@ public sealed class WirelessPairing(HostIdentity identity, TrustedDeviceStore tr
                 await channel.WriteAsync(ControlCodec.Encode(new PairResultMessage(accepted)), abort.Token).ConfigureAwait(false);
                 if (!accepted)
                 {
+                    // Close gracefully: closing a socket with the tablet's own answer still unread makes the
+                    // kernel reset the connection (Linux does so immediately), and a reset can discard the
+                    // "declined" just sent before the tablet reads it.
+                    await CloseQuietlyAsync(tls, peerTask).ConfigureAwait(false);
                     return new PairingResult(PairingStatus.DeclinedHere, "Pairing was cancelled on this PC.");
                 }
 
@@ -222,6 +226,20 @@ public sealed class WirelessPairing(HostIdentity identity, TrustedDeviceStore tr
         {
             log?.Invoke($"pairing failed: {exception.GetType().Name}");
             return Fail("The connection to the tablet failed. Check that both devices are on the same network and the tablet is in pairing mode.");
+        }
+    }
+
+    /// <summary>Sends close_notify and reads what the tablet still sends (its answer, its close), briefly.</summary>
+    private static async Task CloseQuietlyAsync(System.Net.Security.SslStream tls, Task<object> peerTask)
+    {
+        try
+        {
+            await tls.ShutdownAsync().WaitAsync(TimeSpan.FromMilliseconds(500)).ConfigureAwait(false);
+            await peerTask.WaitAsync(TimeSpan.FromMilliseconds(1000)).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is IOException or TimeoutException or OperationCanceledException or ObjectDisposedException or ProtocolException or SocketException)
+        {
+            // The decline was written; a peer that is already gone changes nothing.
         }
     }
 
