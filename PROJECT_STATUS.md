@@ -9,6 +9,21 @@ the gate: [docs/quality/beta-acceptance.md](docs/quality/beta-acceptance.md). Ho
 As of 2026-11-23, branch `main`: the CachyOS native validation work below is committed on top of
 `46f98e2`.
 
+## Direction (2026-11-23, Ubuntu preparation mission)
+
+- **Windows** is the primary platform. **Ubuntu 26.04 LTS (GNOME, Wayland)** is the primary Linux target;
+  Kubuntu is secondary; X11 flavours are experimental.
+- **CachyOS/Hyprland is frozen** at `7c24c3f`: code and evidence kept, no further development except for
+  shared-code regressions or security issues.
+- Research, architecture, acceptance plan, UI redesign and roadmap for this direction:
+  [ubuntu-platform-strategy.md](docs/research/ubuntu-platform-strategy.md),
+  [ubuntu-host-architecture.md](docs/architecture/ubuntu-host-architecture.md),
+  [ubuntu-acceptance-plan.md](docs/quality/ubuntu-acceptance-plan.md),
+  [host-ui-redesign.md](docs/ui/host-ui-redesign.md),
+  [android-tablet-redesign.md](docs/ui/android-tablet-redesign.md),
+  [ubuntu-and-ui-redesign-roadmap.md](docs/roadmap/ubuntu-and-ui-redesign-roadmap.md).
+  No production code changed in that mission; nothing in them is measured on Ubuntu yet.
+
 ## CachyOS native validation (2026-11-23)
 
 First native Linux run: CachyOS on the external SSD, **Hyprland 0.57.2 on Wayland** (not KDE; KDE and

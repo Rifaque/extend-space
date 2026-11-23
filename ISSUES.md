@@ -10,6 +10,24 @@ in [architecture section 18.12](docs/architecture/production-session-architectur
 Last updated 2026-11-23, end of the CachyOS native validation mission. Hardware procedures H1–H13 referred to below
 are in [docs/quality/beta-acceptance.md](docs/quality/beta-acceptance.md).
 
+## Ubuntu preparation mission (2026-11-23)
+
+Found by research and code reading, not on Ubuntu hardware. Plan:
+[ubuntu-and-ui-redesign-roadmap.md](docs/roadmap/ubuntu-and-ui-redesign-roadmap.md).
+
+| ID | Title | Severity | Kind | Plan | Evidence |
+| --- | --- | --- | --- | --- | --- |
+| ES-180 | RemoteDesktop portal sessions (input on) request no persistence, so GNOME/KDE will ask for consent on every connection | Medium | Gap | Pass `persist_mode`/`restore_token` on `SelectDevices` when RemoteDesktop version ≥ 2 (architecture §5), milestone U2 | `DesktopPortal.OpenAsync`; portal spec |
+| ES-181 | `install.sh` Ubuntu line omits `gstreamer1.0-plugins-bad` (no `h264parse`, `vah264enc`, `nvh264enc`) | Medium | Packaging | Add it; `.deb` declares it (U4) | `packaging/linux/install.sh` line 56 |
+| ES-182 | Windows Settings page says "Extend mode is not implemented yet" (stale since D87–D94) | Low | UX | Redesign R1 | `SettingsPage.xaml` |
+| ES-183 | Windows and Linux Home pages order the same cards differently; Windows lists devices before the transport that filters them | Low | UX | Redesign R1–R2 | `HomePage.xaml`, `HomeView.axaml` |
+| ES-184 | Kubuntu 26.04 (Plasma 6.6) virtual screens are fixed at 1920 × 1080; tablet-shaped Extend needs Plasma 6.8 | Medium | Platform limit | Show the actual size; Tier 2 limitation | KDE bugs 485850, 512620 |
+| ES-185 | Ubuntu 26.04 reportedly delivers no frames for pointer-only motion on virtual/portal streams | Medium | Platform risk | Test M7; `MUTTER_DEBUG_DISABLE_HW_CURSORS=1` workaround | GNOME Discourse 2026-05-09 |
+| ES-186 | Tablet must tap "Wait for PC" before every connection | Medium | UX | Ready-by-default listening (A3), needs a decision | `ConnectScreen.kt`, `SessionActivity` |
+
+CachyOS/Hyprland is **frozen** from this mission on: its open rows (ES-173 to ES-179) stay open for
+reference; ES-173 (VA-API latency) and the not-run procedures of ES-179 are re-tested on Ubuntu instead.
+
 ## CachyOS native validation mission (2026-11-23)
 
 Native CachyOS on the external SSD, **Hyprland 0.57.2 on Wayland** (not KDE), real Pad 7 over USB and

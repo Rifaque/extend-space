@@ -152,7 +152,12 @@ an insecure PIN scheme, a copied connection controller and a second input socket
 implemented it on both apps without changing the USB path's behaviour. Exit criteria and their
 evidence: research sections 16–17 and PROJECT_STATUS.md.
 
-**Recommended next milestone (after the CachyOS mission):** Phase B on Ubuntu (GNOME, Wayland and
+**Current direction (2026-11-23, Ubuntu preparation):** Windows primary; Ubuntu 26.04 LTS GNOME Wayland
+the primary Linux target; CachyOS frozen at `7c24c3f`. Next: milestone **U0** (Ubuntu install and
+baseline), then U1–U5, with the host and tablet UI redesign (R1–R3, A1–A3) in parallel on Windows. Plan:
+[ubuntu-and-ui-redesign-roadmap.md](docs/roadmap/ubuntu-and-ui-redesign-roadmap.md).
+
+Earlier recommendation (after the CachyOS mission): Phase B on Ubuntu (GNOME, Wayland and
 X11): the portal RemoteDesktop/VIRTUAL paths that CachyOS + Hyprland could not exercise (ES-150), the
 procedures not run on CachyOS (ES-179), and the VA-API latency question (ES-173). CachyOS Phase A is
 done: [platform-acceptance.md](docs/quality/platform-acceptance.md#phase-a-cachyos--run-2026-11-23-native-real-pad-7).

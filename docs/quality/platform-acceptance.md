@@ -117,6 +117,10 @@ Forget/revocation, 10-minute soak, KDE, GNOME, X11.
 Same environment block and checks B1–B16 as A1–A16. Record Ubuntu's results here only; compare with
 Phase A afterwards to separate distribution-specific problems from general ones.
 
+Superseded in detail (2026-11-23) by the staged GNOME procedure in
+[ubuntu-acceptance-plan.md](ubuntu-acceptance-plan.md) (Stages 0–9); record its row ids here. Target:
+Ubuntu 26.04 LTS, GNOME 50, Wayland (no Xorg session exists there).
+
 | # | Result | Notes |
 | --- | --- | --- |
 | B1–B16 | NOT RUN | |
